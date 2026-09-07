@@ -1,0 +1,35 @@
+# Local CI mirror for SessionWeaver. "Does this repo meet the standard?" is
+# `ci-standards check --target .`; "would GitHub Actions pass?" is
+# `ci-standards run-job gates --target . --image ci-standards-runner:latest \
+#     --matrix os:ubuntu-latest --matrix python:3.13`
+# (see ~/code/personal/tools/github_ci_pipeline/README.md).
+#
+# Every check overrides the profile default with this repo's own gate command,
+# matching .github/workflows/ci.yml, so a local pass means the same command CI
+# runs. The workflow's single job is named `gates`.
+
+profile: python-uv
+
+checks:
+  lint-format:
+    command: uv run ruff format --check .
+  lint:
+    command: uv run ruff check .
+
+  # ci.yml `Typecheck` step. pyright is a declared dev dependency (Stage 0.4).
+  typecheck:
+    command: uv run pyright
+
+  # ci.yml `Test` step: warnings are errors, the `live` marker is deselected by
+  # pyproject addopts, and the >=90% coverage gate is part of the same command.
+  test:
+    command: uv run pytest -W error
+    requires_path: pyproject.toml
+
+  # The profile's uvx-pinned bandit is warn-only there; this repo has no bandit
+  # gate in ci.yml, so keep the profile default rather than pretending CI runs it.
+
+disable:
+  # No mkdocs site and no JavaScript in this repository.
+  - mkdocs-strict
+  - js-tests
