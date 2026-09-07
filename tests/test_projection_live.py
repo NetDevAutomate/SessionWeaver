@@ -37,7 +37,7 @@ from agent_session_tools.context.scope import visibility_sql
 from session_weaver.concepts import ConceptService
 
 _EVIDENCE_SCHEMA = "session-weaver.concept-projection-baseline"
-_EVIDENCE_VERSION = 1
+_EVIDENCE_VERSION = 2
 
 _DEFAULT_SESSIONS_DB = Path.home() / ".config" / "studyloop" / "sessions.db"
 _DEFAULT_OKF_STORE = (
@@ -223,7 +223,7 @@ def _validate_baseline_schema(evidence: Mapping[str, Any]) -> None:
         "scanned",
         "parsed",
         "legacy_unbound",
-        "excluded_oversized_body_files",
+        "oversized_evidence",
     }
     for key in import_counts:
         assert isinstance(import_counts[key], int) and import_counts[key] >= 0
@@ -263,50 +263,6 @@ def _write_baseline_evidence(evidence: Mapping[str, Any], output: Path) -> None:
     )
 
 
-def _oversized_body_sessions(backup: Path) -> frozenset[str]:
-    """Sessions whose evidence exceeds the upstream bounded-reader body limit.
-
-    A3b1's already-reviewed ``_EvidenceResolver`` (concepts.py) fetches every
-    visible evidence body for an OKF record's claimed session while attempting
-    citation resolution, and the upstream ``AgentContext._source`` bounded
-    reader (``agent_session_tools.context.public``) refuses any body over
-    ``MAX_BODY_CHARS``. This is out of scope for A3b2 (it is A3b1 resolver
-    behaviour, not one of the F1-F12 projection findings) and must not be
-    touched here. Excluding OKF records that claim one of these sessions is a
-    read-only, test-local narrowing of the input corpus, not a fix.
-    """
-    from agent_session_tools.context.public import MAX_BODY_CHARS
-
-    with closing(sqlite3.connect(backup)) as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT session_id FROM context_evidence WHERE length(body) > ?",
-            (MAX_BODY_CHARS,),
-        ).fetchall()
-    return frozenset(row[0] for row in rows)
-
-
-def _copy_okf_tree_excluding_sessions(
-    source: Path, destination: Path, excluded_sessions: frozenset[str]
-) -> int:
-    """Copy every OKF markdown file except one claiming an excluded session.
-
-    Returns the number of excluded files. Read-only against ``source``.
-    """
-    excluded = 0
-    needles = tuple(f"sessionweaver://session/{session_id}" for session_id in excluded_sessions)
-    for path in source.rglob("*.md"):
-        if needles and any(
-            needle in path.read_text(encoding="utf-8", errors="ignore") for needle in needles
-        ):
-            excluded += 1
-            continue
-        relative = path.relative_to(source)
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
-    return excluded
-
-
 @pytest.mark.live
 def test_real_corpus_projection_proof() -> None:
     """Disposable real-corpus proof: import + project + rerun + retire + rerun.
@@ -328,7 +284,6 @@ def test_real_corpus_projection_proof() -> None:
     home_dir = backup_dir / "home"
     home_dir.mkdir()
     config_path = backup_dir / "config.yaml"
-    filtered_okf_dir = Path(tempfile.mkdtemp(prefix="session-weaver-okf-filtered-")).resolve()
     out = Path(f"/tmp/session-weaver-a3b2-live-{uuid4().hex}")
 
     old_env = {
@@ -361,23 +316,15 @@ def test_real_corpus_projection_proof() -> None:
 
         service = ConceptService(backup_path)
 
-        # A3b1's citation resolver (out of A3b2's scope; not touched here) fetches
-        # every visible evidence body for an OKF record's claimed session, and the
-        # upstream bounded reader refuses any body over MAX_BODY_CHARS. A handful
-        # of real sessions on this machine now exceed that limit (unrelated to
-        # A3b2), which would abort the whole import transaction. Excluding OKF
-        # records that claim one of those sessions is a read-only, test-local
-        # narrowing of the input, not a production fix; the excluded count is
-        # recorded in the sanitized baseline.
-        oversized_sessions = _oversized_body_sessions(backup_path)
-        excluded_oversized = _copy_okf_tree_excluding_sessions(
-            _DEFAULT_OKF_STORE, filtered_okf_dir, oversized_sessions
-        )
-
+        # Task A3c: an evidence body over MAX_BODY_CHARS for a claimed session no
+        # longer aborts the whole import transaction (concepts.py's
+        # _EvidenceResolver degrades that one record to legacy_unbound /
+        # oversized_evidence and continues). The full, unfiltered OKF store is
+        # therefore imported directly and read-only; nothing is pre-excluded.
         started = perf_counter()
         import_report = service.import_okf(
-            filtered_okf_dir,
-            actor="a3b2-fix-live-proof",
+            _DEFAULT_OKF_STORE,
+            actor="a3c-fix-live-proof",
         )
         import_seconds = perf_counter() - started
         assert import_report.scanned == (
@@ -386,8 +333,21 @@ def test_real_corpus_projection_proof() -> None:
             + import_report.invalid_schema
             + import_report.unsafe_path
         )
-        assert import_report.scanned == okf_file_count - excluded_oversized
-        assert import_report.parsed == import_report.legacy_unbound
+        assert import_report.scanned == okf_file_count
+        assert import_report.parsed == (
+            import_report.duplicate_content
+            + import_report.already_present
+            + import_report.bound
+            + import_report.legacy_unbound
+        )
+        assert import_report.legacy_unbound == (
+            import_report.missing_session
+            + import_report.no_visible_evidence
+            + import_report.no_exact_match
+            + import_report.ambiguous_match
+            + import_report.oversized_evidence
+        )
+        assert import_report.oversized_evidence >= 1
         assert import_report.write_failures == 0
 
         started = perf_counter()
@@ -399,7 +359,7 @@ def test_real_corpus_projection_proof() -> None:
         expected_rendered, bound_count, legacy_count = _independent_expected(backup_path)
         assert run1.rendered == expected_rendered > 0
         assert run1.selected == run1.rendered + run1.skipped_unavailable + run1.skipped_retired
-        assert bound_count == 0
+        assert bound_count == import_report.bound
 
         started = perf_counter()
         run2 = service.project(out)
@@ -458,7 +418,7 @@ def test_real_corpus_projection_proof() -> None:
             "scanned": import_report.scanned,
             "parsed": import_report.parsed,
             "legacy_unbound": import_report.legacy_unbound,
-            "excluded_oversized_body_files": excluded_oversized,
+            "oversized_evidence": import_report.oversized_evidence,
         }
         projection_counts = {
             "run1": {key: getattr(run1, key) for key in _PROJECTION_RUN_KEYS},
@@ -473,7 +433,7 @@ def test_real_corpus_projection_proof() -> None:
         }
     finally:
         cleanup_errors: list[str] = []
-        for target in (out, backup_dir, filtered_okf_dir):
+        for target in (out, backup_dir):
             try:
                 shutil.rmtree(target, ignore_errors=False)
             except OSError as exc:

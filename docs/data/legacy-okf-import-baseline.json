@@ -16,6 +16,7 @@
     "missing_session": 0,
     "no_exact_match": 1198,
     "no_visible_evidence": 835,
+    "oversized_evidence": 0,
     "parsed": 2033,
     "scanned": 2033,
     "unsafe_path": 0,
@@ -23,7 +24,7 @@
     "writes": 0
   },
   "evidence_schema": "session-weaver.legacy-okf-import-baseline",
-  "evidence_version": 2,
+  "evidence_version": 3,
   "idempotent_reimport": {
     "already_present": 2033,
     "ambiguous_match": 0,
@@ -37,6 +38,7 @@
     "missing_session": 0,
     "no_exact_match": 0,
     "no_visible_evidence": 0,
+    "oversized_evidence": 0,
     "parsed": 2033,
     "scanned": 2033,
     "unsafe_path": 0,
@@ -67,6 +69,7 @@
     "original_byte_identity_preserved": true
   },
   "okf_source_sentinel_unchanged": true,
+  "schema_note": "evidence_version 3 adds oversized_evidence (task A3c: a claimed session's evidence body over the bounded reader's MAX_BODY_CHARS limit is excluded from exact-match search and classified legacy_unbound/oversized_evidence per record, instead of aborting the whole import transaction). This capture predates that field; 0 is filled in for dry_run/write/idempotent_reimport because every record here completed classification with zero write_failures, which is only possible if no record's claimed session ever reached an oversized-body exclusion. No new proof run was captured for this note; A6 regenerates this baseline on the full corpus under the current ImportReport shape.",
   "source": {
     "evidence_count": 40829,
     "message_count": 133560,
@@ -122,6 +125,7 @@
     "missing_session": 0,
     "no_exact_match": 1198,
     "no_visible_evidence": 835,
+    "oversized_evidence": 0,
     "parsed": 2033,
     "scanned": 2033,
     "unsafe_path": 0,

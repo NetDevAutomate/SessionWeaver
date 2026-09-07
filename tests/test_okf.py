@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 import pytest
 from agent_session_tools.context.provenance import Origin
+from agent_session_tools.context.public import MAX_BODY_CHARS
 from agent_session_tools.context.store import ContextStore, NativeSource
 
 from session_weaver.concepts import ConceptService
@@ -30,6 +31,7 @@ _COUNTER_KEYS = {
     "no_visible_evidence",
     "no_exact_match",
     "ambiguous_match",
+    "oversized_evidence",
     "body_description_mismatch",
     "imported",
     "write_failures",
@@ -407,6 +409,7 @@ def _concept_state(conn: sqlite3.Connection) -> dict[str, object]:
         ("no-evidence", "no_visible_evidence"),
         ("no-match", "no_exact_match"),
         ("ambiguous", "ambiguous_match"),
+        ("oversized", "oversized_evidence"),
     ],
 )
 def test_dry_run_classifies_full_body_against_visible_evidence_with_zero_writes(
@@ -436,6 +439,22 @@ def test_dry_run_classifies_full_body_against_visible_evidence_with_zero_writes(
         production_store.conn.commit()
     elif classification == "ambiguous":
         _capture(production_store, f"{body}\n{body}", key="ambiguous-body")
+    elif classification == "oversized":
+        session_id = "oversized-only-session"
+        production_store.conn.execute(
+            """INSERT INTO sessions(
+               id,source,project_path,git_branch,created_at,updated_at,metadata)
+               SELECT ?,source,project_path,git_branch,created_at,updated_at,metadata
+               FROM sessions WHERE id='fixture-session-1'""",
+            (session_id,),
+        )
+        production_store.conn.commit()
+        _capture(
+            production_store,
+            "x" * (MAX_BODY_CHARS + 1),
+            session_id=session_id,
+            key="oversized-body",
+        )
 
     _write(
         root,
@@ -467,6 +486,7 @@ def test_dry_run_classifies_full_body_against_visible_evidence_with_zero_writes(
         + report.no_visible_evidence
         + report.no_exact_match
         + report.ambiguous_match
+        + report.oversized_evidence
         == report.legacy_unbound
     )
     assert report.errors == ()
@@ -489,6 +509,155 @@ def test_body_outside_safe_citation_limit_stays_legacy_unbound(
     assert report.legacy_unbound == 1
     assert report.no_exact_match == 1
     assert report.writes == 0
+
+
+def test_oversized_evidence_body_is_reported_and_import_continues(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    """An oversized evidence body degrades one record; it must not abort the batch.
+
+    Regression for the bug found during A3b2's real-corpus proof: any evidence
+    body over ``MAX_BODY_CHARS`` for a claimed session used to raise from deep
+    inside ``_EvidenceResolver._visible_sources()`` and abort the whole
+    ``import_okf`` transaction, discarding every other record's classification.
+    """
+    root = tmp_path / "okf"
+    root.mkdir()
+    oversized_session = "oversized-only-session"
+    production_store.conn.execute(
+        """INSERT INTO sessions(
+           id,source,project_path,git_branch,created_at,updated_at,metadata)
+           SELECT ?,source,project_path,git_branch,created_at,updated_at,metadata
+           FROM sessions WHERE id='fixture-session-1'""",
+        (oversized_session,),
+    )
+    production_store.conn.commit()
+    _capture(
+        production_store,
+        "x" * (MAX_BODY_CHARS + 1),
+        session_id=oversized_session,
+        key="oversized-only-body",
+    )
+    _write(
+        root,
+        "a-oversized.md",
+        _okf_bytes(
+            title="Oversized evidence",
+            description="short",
+            body="Statement claimed against a session with only an oversized body.",
+            session_id=oversized_session,
+        ),
+    )
+    bound_body = "Full exact body imported despite a sibling oversized record."
+    _capture(production_store, bound_body, key="sibling-bound-body")
+    _write(
+        root,
+        "b-bound.md",
+        _okf_bytes(title="Sibling bound import", description="short", body=bound_body),
+    )
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    dry_run = service.import_okf(root, actor="fixture-importer", dry_run=True)
+    result = service.import_okf(root, actor="fixture-importer")
+
+    for report in (dry_run, result):
+        assert report.scanned == 2
+        assert report.parsed == 2
+        assert report.oversized_evidence == 1
+        assert report.bound == 1
+        assert report.legacy_unbound == 1
+        assert report.write_failures == 0
+    assert dry_run.writes == 0
+    assert dry_run.imported == 0
+    assert result.imported == 2
+    assert result.writes == 6
+    assert result.errors == ()
+
+
+def test_mixed_body_session_binds_against_normal_sized_evidence_only(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    """A session mixing an oversized and a normal-sized body still binds.
+
+    Exact-match search is attempted against normal-sized visible evidence
+    only; a match there still binds even though a sibling oversized body was
+    excluded.
+    """
+    root = tmp_path / "okf"
+    root.mkdir()
+    body = "Full canonical body present only in the normal-sized evidence row."
+    _capture(production_store, "x" * (MAX_BODY_CHARS + 1), key="mixed-bound-oversized")
+    _capture(production_store, body, key="mixed-bound-normal")
+    _write(root, "concept.md", _okf_bytes(description="short", body=body))
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    dry_run = service.import_okf(root, actor="fixture-importer", dry_run=True)
+    result = service.import_okf(root, actor="fixture-importer")
+
+    for report in (dry_run, result):
+        assert report.bound == 1
+        assert report.legacy_unbound == 0
+        assert report.oversized_evidence == 0
+        assert report.write_failures == 0
+    assert dry_run.writes == 0
+    assert result.imported == 1
+    assert result.writes == 5
+
+
+def test_mixed_body_session_with_no_normal_match_reports_oversized_evidence(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    """No match among normal-sized evidence classifies as ``oversized_evidence``.
+
+    Per the documented precedence in ``ConceptService.import_okf``: when at
+    least one body was excluded for size and the full statement matches zero
+    of the remaining normal-sized rows, ``oversized_evidence`` wins over the
+    generic ``no_exact_match`` because size-based exclusion is the more
+    informative explanation.
+    """
+    root = tmp_path / "okf"
+    root.mkdir()
+    record_body = "This exact full body is not present in any visible evidence."
+    _capture(production_store, "x" * (MAX_BODY_CHARS + 1), key="mixed-nomatch-oversized")
+    _capture(
+        production_store,
+        "An unrelated normal-sized evidence body.",
+        key="mixed-nomatch-normal",
+    )
+    _write(root, "concept.md", _okf_bytes(description="short", body=record_body))
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    report = service.import_okf(root, actor="fixture-importer", dry_run=True)
+
+    assert report.bound == 0
+    assert report.legacy_unbound == 1
+    assert report.oversized_evidence == 1
+    assert report.no_exact_match == 0
+    assert report.writes == 0
+
+
+def test_ambiguous_match_takes_precedence_over_oversized_evidence(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    """An ambiguous match among normal-sized rows outranks a sibling oversized body."""
+    root = tmp_path / "okf"
+    root.mkdir()
+    body = "Full canonical body repeated to force ambiguity in normal-sized evidence."
+    _capture(production_store, "x" * (MAX_BODY_CHARS + 1), key="ambiguous-oversized")
+    _capture(production_store, f"{body}\n{body}", key="ambiguous-normal")
+    _write(root, "concept.md", _okf_bytes(description="short", body=body))
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    report = service.import_okf(root, actor="fixture-importer", dry_run=True)
+
+    assert report.ambiguous_match == 1
+    assert report.oversized_evidence == 0
+    assert report.bound == 0
+    assert report.legacy_unbound == 1
 
 
 def test_write_import_reuses_safe_bind_and_leaves_historical_trust_proposed(
@@ -657,14 +826,17 @@ def test_all_records_resolve_before_first_write_in_one_outer_transaction(
         with real_open_context(*args, **kwargs) as context:
             yield context
 
-    def checked_visible_sources(self: object) -> dict[str, str]:
+    def checked_visible_sources(self: object, *, degrade_oversized: bool = False) -> dict[str, str]:
         resolver = self
         root_counts_during_resolution.append(
             resolver._context.conn.execute(  # type: ignore[attr-defined]
                 "SELECT count(*) FROM context_concepts"
             ).fetchone()[0]
         )
-        return real_visible_sources(resolver)  # type: ignore[arg-type]
+        return real_visible_sources(
+            resolver,  # type: ignore[arg-type]
+            degrade_oversized=degrade_oversized,
+        )
 
     monkeypatch.setattr(concepts_module, "open_context", counted_open_context)
     monkeypatch.setattr(

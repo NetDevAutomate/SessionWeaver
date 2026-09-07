@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from agent_session_tools.config_loader import get_db_path, load_config
-from agent_session_tools.context.public import AgentContext, open_context
+from agent_session_tools.context.public import MAX_BODY_CHARS, AgentContext, open_context
 from agent_session_tools.context.scope import ScopeError, visibility_sql
 
 from .concept_schema import _MAX_COUNTER, _ensure_schema
@@ -111,8 +111,23 @@ class _EvidenceResolver:
         self._context = context
         self._session_id = session_id
         self._sources: dict[str, str] | None = None
+        self._oversized_evidence_count = 0
 
-    def _visible_sources(self) -> dict[str, str]:
+    def _visible_sources(self, *, degrade_oversized: bool = False) -> dict[str, str]:
+        """Return every scope-visible evidence body for the claimed session.
+
+        When ``degrade_oversized`` is false (the default, used by wind-down and
+        explicit bind citation resolution), a body over the upstream bounded
+        reader's ``MAX_BODY_CHARS`` limit raises exactly as before -- this
+        method's contract is otherwise unchanged for those callers.
+
+        When ``degrade_oversized`` is true (used only by ``import_okf``'s
+        per-record classification), any evidence row whose body exceeds
+        ``MAX_BODY_CHARS`` is excluded from the returned mapping instead of
+        raising, and counted in ``self._oversized_evidence_count``. The oversized
+        body itself is never loaded into memory: its length is checked directly
+        against the already-fetched ``context_evidence.body`` column length.
+        """
         if self._sources is not None:
             return self._sources
         store_clause, store_params = self._context.store._where(self._context.access)
@@ -122,26 +137,28 @@ class _EvidenceResolver:
             policy=self._context.policy,
             scope=self._context.scope,
         )
-        identities = [
-            row[0]
-            for row in self._context.conn.execute(
-                """SELECT e.id FROM context_evidence e
-                   LEFT JOIN context_session_projects sp ON sp.session_id=e.session_id
-                   LEFT JOIN context_projects p ON p.id=sp.project_id
-                   WHERE e.session_id=? AND """
-                + store_clause
-                + " AND "
-                + visibility_clause
-                + " ORDER BY e.id",
-                (self._session_id, *store_params, *visibility_params),
-            )
-        ]
+        rows = self._context.conn.execute(
+            """SELECT e.id, length(e.body) FROM context_evidence e
+               LEFT JOIN context_session_projects sp ON sp.session_id=e.session_id
+               LEFT JOIN context_projects p ON p.id=sp.project_id
+               WHERE e.session_id=? AND """
+            + store_clause
+            + " AND "
+            + visibility_clause
+            + " ORDER BY e.id",
+            (self._session_id, *store_params, *visibility_params),
+        ).fetchall()
         sources: dict[str, str] = {}
-        for identity in identities:
+        oversized_evidence_count = 0
+        for identity, body_length in rows:
+            if degrade_oversized and body_length is not None and body_length > MAX_BODY_CHARS:
+                oversized_evidence_count += 1
+                continue
             source = self._context._source(identity)
             if source is not None:
                 sources[identity] = source["body"]
         self._sources = sources
+        self._oversized_evidence_count = oversized_evidence_count
         return sources
 
     @staticmethod
@@ -898,7 +915,41 @@ class ConceptService:
         project: str | None = None,
         dry_run: bool = False,
     ) -> ImportReport:
-        """Import valid OKF roots atomically after complete parse and resolution."""
+        """Import valid OKF roots atomically after complete parse and resolution.
+
+        Per-record binding classification precedence (checked in this exact
+        order; the first matching rule decides the record's ``legacy_unbound``
+        sub-reason, or ``bound``):
+
+        1. ``missing_session`` -- the claimed session is not scope-visible;
+           evidence is never queried.
+        2. ``no_exact_match`` -- the record's full body exceeds the 2,000
+           code-point exact-citation limit; evidence is never queried.
+        3. ``no_visible_evidence`` -- the session is visible, zero evidence rows
+           are visible under the active scope, and none were excluded for
+           exceeding ``MAX_BODY_CHARS``.
+        4. ``oversized_evidence`` -- at least one visible evidence row exceeds
+           ``MAX_BODY_CHARS`` and was excluded from exact-match search (its body
+           is never loaded into memory for this purpose), *and* either no
+           normal-sized row remains visible, or none of the remaining
+           normal-sized rows contain the record's full body. This sub-reason
+           takes precedence over ``no_visible_evidence`` and ``no_exact_match``
+           in exactly those two situations, because "evidence existed but was
+           too large to use" is a more informative explanation than either.
+        5. ``no_exact_match`` -- normal-sized visible evidence exists, none was
+           excluded for size, and the full body matches zero rows.
+        6. ``ambiguous_match`` -- the full body matches more than one
+           normal-sized visible row. This is decided before the oversized rule
+           is considered, so an ambiguous match always wins even when another
+           row was also excluded for size.
+        7. ``bound`` -- the full body matches exactly one normal-sized visible
+           row; a single exact citation is proposed against it.
+
+        A record's classification never aborts the batch: every other record is
+        still classified and, in write mode, every classified record (bound or
+        not) is imported as an immutable legacy root inside the one outer
+        transaction.
+        """
 
         def operation_report(*issues: _Issue) -> ImportReport:
             return ImportReport(
@@ -942,6 +993,7 @@ class ConceptService:
             "no_visible_evidence": 0,
             "no_exact_match": 0,
             "ambiguous_match": 0,
+            "oversized_evidence": 0,
         }
         plans: list[tuple[_OKFRecord, tuple[dict[str, object], ...] | None, str | None]] = []
         imported = 0
@@ -983,9 +1035,14 @@ class ConceptService:
                         if len(record.statement) > 2000:
                             reason = "no_exact_match"
                         else:
-                            sources = resolver._visible_sources()
+                            sources = resolver._visible_sources(degrade_oversized=True)
+                            had_oversized_evidence = resolver._oversized_evidence_count > 0
                             if not sources:
-                                reason = "no_visible_evidence"
+                                reason = (
+                                    "oversized_evidence"
+                                    if had_oversized_evidence
+                                    else "no_visible_evidence"
+                                )
                             else:
                                 matches = [
                                     (
@@ -998,7 +1055,11 @@ class ConceptService:
                                     for start in resolver._occurrences(body, record.statement)
                                 ]
                                 if not matches:
-                                    reason = "no_exact_match"
+                                    reason = (
+                                        "oversized_evidence"
+                                        if had_oversized_evidence
+                                        else "no_exact_match"
+                                    )
                                 elif len(matches) > 1:
                                     reason = "ambiguous_match"
                                 else:

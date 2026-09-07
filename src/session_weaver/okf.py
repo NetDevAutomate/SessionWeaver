@@ -44,6 +44,7 @@ _COUNTER_NAMES: Final = (
     "no_visible_evidence",
     "no_exact_match",
     "ambiguous_match",
+    "oversized_evidence",
     "body_description_mismatch",
     "imported",
     "write_failures",
@@ -70,6 +71,14 @@ class ImportReport:
     ``scanned`` partitions into ``parsed + invalid_yaml + invalid_schema + unsafe_path``.
     Parsed includes duplicate records; body/description mismatch is an orthogonal
     observation made after safe YAML parsing, including otherwise invalid schemas.
+
+    ``legacy_unbound`` partitions into ``missing_session + no_visible_evidence +
+    no_exact_match + ambiguous_match + oversized_evidence``. ``oversized_evidence``
+    counts records whose claimed session had at least one evidence body over the
+    upstream bounded reader's ``MAX_BODY_CHARS`` limit that was excluded from
+    exact-match search rather than aborting the record (or the batch); see the
+    exact classification precedence documented on
+    ``ConceptService.import_okf``.
     """
 
     scanned: int = 0
@@ -85,6 +94,7 @@ class ImportReport:
     no_visible_evidence: int = 0
     no_exact_match: int = 0
     ambiguous_match: int = 0
+    oversized_evidence: int = 0
     body_description_mismatch: int = 0
     imported: int = 0
     write_failures: int = 0
@@ -184,6 +194,7 @@ class _Counters:
     no_visible_evidence: int = 0
     no_exact_match: int = 0
     ambiguous_match: int = 0
+    oversized_evidence: int = 0
     body_description_mismatch: int = 0
     imported: int = 0
     write_failures: int = 0

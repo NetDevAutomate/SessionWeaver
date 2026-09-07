@@ -47,6 +47,15 @@ may change before `1.0.0`.
 
 ### Fixed
 
+- Degraded oversized legacy OKF evidence bodies per record instead of aborting the
+  whole import transaction: a claimed session's evidence body over the bounded
+  reader's `MAX_BODY_CHARS` limit is now excluded from exact-match search and that
+  one record is classified `legacy_unbound`/`oversized_evidence`, while every other
+  record in the batch still imports. A session mixing an oversized and a
+  normal-sized body still binds against the normal-sized body when exactly one
+  match exists there; an ambiguous match among normal-sized rows still takes
+  precedence over the oversized classification. The real-corpus live proof no
+  longer pre-excludes any file: all 2,033 parseable OKF records import in one run.
 - Preserved every parseable frozen-writer OKF record by reporting and lowercasing
   canonicalizable legacy tag case without changing original-byte identities; the
   disposable-copy receipt now reconciles all 2,033 roots and idempotent hits.

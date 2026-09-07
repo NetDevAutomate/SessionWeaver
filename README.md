@@ -63,8 +63,14 @@ becomes acceptance. Only one literal occurrence of the **full Markdown body** in
 scope-visible evidence creates a new proposed bound successor. Missing or hidden claimed
 sessions retain their source URI with no fabricated session/FK and remain unavailable
 until the real session becomes scope-visible and can be bound safely. Zero matches,
-ambiguity, no visible evidence, and oversized citation bodies remain unbound. Source
-traversal and report replacement are anchored to securely opened directory descriptors;
+ambiguity, no visible evidence, and oversized citation bodies (over the 2,000
+code-point exact-match limit) remain unbound. A claimed session's evidence body over
+the bounded reader's per-evidence size limit is never loaded for exact-match binding;
+that one record is classified `legacy-unbound`/`oversized_evidence` and the import
+continues — it does not abort the batch. A session mixing an oversized and a
+normal-sized body still binds against the normal-sized body when exactly one match
+exists there. Source traversal and report replacement are anchored to securely opened
+directory descriptors;
 if report delivery fails after commit, the CLI returns exit 1 with truthful committed
 write counters. `--dry-run` performs the same classification with zero writes, and
 repeated imports add no rows or events. The sanitized disposable-copy receipt, including

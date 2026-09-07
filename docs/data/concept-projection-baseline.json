@@ -1,14 +1,14 @@
 {
-  "aggregate_projection_sha256": "ccb5ba5cbe34f3b190d886edb20c8162351f0872623603517900a53e2411e098",
-  "captured_at_utc": "2026-09-07T21:24:11Z",
+  "aggregate_projection_sha256": "8eb98abca4b89b4c6bba8f5847081143bb92ed17a2e4988493c8fc7b645bfa7d",
+  "captured_at_utc": "2026-09-07T22:07:24Z",
   "cleanup_ok": true,
   "evidence_schema": "session-weaver.concept-projection-baseline",
-  "evidence_version": 1,
+  "evidence_version": 2,
   "import_counts": {
-    "excluded_oversized_body_files": 45,
-    "legacy_unbound": 1988,
-    "parsed": 1988,
-    "scanned": 1990
+    "legacy_unbound": 2033,
+    "oversized_evidence": 45,
+    "parsed": 2033,
+    "scanned": 2035
   },
   "okf_source_sentinel_unchanged": true,
   "projection": {
@@ -16,20 +16,20 @@
       "conflicts": 0,
       "created": 0,
       "deleted": 1,
-      "rendered": 1987,
+      "rendered": 2032,
       "replaced": 0,
-      "selected": 1987,
+      "selected": 2032,
       "skipped_retired": 1,
       "skipped_unavailable": 0,
-      "unchanged": 1987
+      "unchanged": 2032
     },
     "run1": {
       "conflicts": 0,
-      "created": 1988,
+      "created": 2033,
       "deleted": 0,
-      "rendered": 1988,
+      "rendered": 2033,
       "replaced": 0,
-      "selected": 1988,
+      "selected": 2033,
       "skipped_retired": 0,
       "skipped_unavailable": 0,
       "unchanged": 0
@@ -38,12 +38,12 @@
       "conflicts": 0,
       "created": 0,
       "deleted": 0,
-      "rendered": 1988,
+      "rendered": 2033,
       "replaced": 0,
-      "selected": 1988,
+      "selected": 2033,
       "skipped_retired": 0,
       "skipped_unavailable": 0,
-      "unchanged": 1988
+      "unchanged": 2033
     }
   },
   "source": {
@@ -53,14 +53,14 @@
   },
   "source_sentinels_unchanged": true,
   "timings_seconds": {
-    "okf_import": 52.137594,
-    "post_retire": 0.999906,
-    "run1": 1.36683,
-    "run2": 1.003833
+    "okf_import": 65.529777,
+    "post_retire": 1.07079,
+    "run1": 1.441642,
+    "run2": 1.032059
   },
   "trust_labels": {
-    "absent": 1988,
+    "absent": 2033,
     "machine_confirmed": 0,
-    "model_proposed": 1988
+    "model_proposed": 2033
   }
 }

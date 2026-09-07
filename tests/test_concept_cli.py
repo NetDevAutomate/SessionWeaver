@@ -737,6 +737,7 @@ def _assert_zero_import_counters(payload: dict[str, Any]) -> None:
         "no_visible_evidence",
         "no_exact_match",
         "ambiguous_match",
+        "oversized_evidence",
         "body_description_mismatch",
         "imported",
         "write_failures",
