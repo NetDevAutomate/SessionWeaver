@@ -9,6 +9,18 @@ may change before `1.0.0`.
 
 ### Added
 
+- Added `session-weaver ontology rebuild [--incremental] [--db PATH]` and
+  read-only `session-weaver ontology status [--db PATH]` with deterministic,
+  content-free JSON output and explicit success/unhealthy/usage exit semantics.
+- Integrated complete ontology health diagnostics into `session-weaver doctor`
+  through its existing read-only connection, including version, coverage,
+  freshness, source-count, orphan, FK, domain/range, and hash checks.
+- Added regression controls proving maintained ontology tables stay outside the
+  pinned normal/global delta-sync allow lists and generated dump SQL. The
+  first-time whole-database seed remains an explicit Phase B sanitization limit.
+- Added an opt-in real-corpus acceptance harness that mutates only a unique
+  SQLite Online Backup, proves source sentinels unchanged, guarantees cleanup,
+  and retains the sanitized post-pin Tier-1 count/hash/timing baseline.
 - Added the deterministic Tier-1 ontology core: canonical message normalization,
   exact frozen-PoC structural extraction, stable A-Box/T-Box identities,
   transactional full and incremental rebuilds, canonical logical hashing, and a

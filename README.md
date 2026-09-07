@@ -42,7 +42,10 @@ session-weaver install --copy             # copies only for non-hub readers
 session-weaver install --copy --force     # replace each named copy target explicitly
 session-weaver install --dry-run          # show what would happen
 session-weaver status                     # inspect current wiring
-session-weaver doctor                     # check the session store + tools
+session-weaver doctor                     # check the session store + ontology + tools
+session-weaver ontology rebuild           # full rebuild of the default store
+session-weaver ontology rebuild --incremental
+session-weaver ontology status            # strictly read-only health diagnostics
 ```
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
@@ -55,17 +58,23 @@ setup dislikes links. An existing named target is a non-destructive conflict unl
 Uninstall removes a copied directory only when that exact marker proves ownership, and
 removes a symlink only when it resolves to the SessionWeaver hub.
 
+Ontology commands use `~/.config/studyloop/sessions.db` unless `--db PATH` is explicit.
+Rebuild opens read/write and emits aggregate JSON only; status opens a SQLite read-only
+URI, never creates the database, and exits nonzero for any unhealthy dimension.
+
 ## What the system does
 
-1. **Capture (enforced)** — Stop hooks in every harness plus a 4-hourly launchd sweep
-   run `session-export`; the exporter produces zero empty rows (measured at birth on a
-   full rebuild) and captures subagent sidechains that were historically lost.
+1. **Capture** — `session-export` imports supported harness transcripts into the
+   shared store, produces zero empty rows, and preserves subagent sidechains that
+   were historically lost. Phase A does not install an automatic ontology rebuild.
 2. **Store (one SQLite file)** — `~/.config/studyloop/sessions.db`, WAL mode: sessions +
    messages + FTS + ontology tables. Multi-machine sync over ssh is idempotent and
    cannot resurrect deleted rows (verified by probe).
 3. **Structure (tier-1 ontology, $0)** — deterministic entity resolution builds a real
-   T-Box/A-Box: 7 classes, 6 typed properties, 13,384 individuals, 28,698 relations,
-   0 domain/range violations, 0.2 s build.
+   T-Box/A-Box. The post-pin Online Backup baseline contains 7 classes, 6 typed
+   properties, 13,336 individuals and 28,766 relations with zero domain/range
+   violations; its cold full rebuild completed in 3.25 s. See the sanitized
+   [`ontology-tier1-baseline.json`](docs/data/ontology-tier1-baseline.json).
 4. **Distil (tier-2 wind-down → OKF)** — a capable model reads each session's FULL text
    and authors knowledge concepts (Decision/Finding/Problem/Preference/Procedure) as
    OKF v0.2 Markdown with provenance frontmatter: 348 sessions → 2,033 concepts,
@@ -73,6 +82,20 @@ removes a symlink only when it resolves to the SessionWeaver hub.
 5. **Serve** — fusion retrieval (OKF concepts + FTS AND→OR planner + embeddings, RRF)
    answers agent questions with session provenance. [`SKILL.md`](SKILL.md) tells agents
    how to read it well and write wind-down knowledge back.
+
+### Ontology safety and sync boundary
+
+The maintained opt-in acceptance test opens an explicit source read-only, records only
+schema/count/hash/freshness sentinels, creates a unique SQLite Online Backup under
+`/tmp`, and runs rebuilds only against that disposable copy. It never uses `cp` for a
+WAL database; source sentinels are compared again before the backup and sidecars are
+deleted. Retained evidence contains counts, hashes, timings, and health verdicts only.
+
+Ontology tables are absent from the pinned normal and global **delta-sync** allow lists.
+The pinned first-time `_seed_remote_db` path still transfers an entire SQLite Online
+Backup, so it can carry existing ontology tables. Phase B B2 owns seed sanitization and
+destination-local rebuild; until then, do not interpret the delta exclusion as a claim
+that ontology rows can never travel by any sync path.
 
 ## The measured result
 
@@ -117,9 +140,19 @@ images/               logo/icon assets used by this README and GitHub
 ## Development
 
 ```bash
-uv sync            # resolves agent-session-tools from the pinned StudyLoop commit
-uv run pytest      # 24 tests: installer semantics, CLI, harness registry, skill sync
+uv sync
+uv run pytest -W error                # full suite; package coverage must stay >=90%
 uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+```
+
+The real-corpus ontology acceptance is opt-in and operates only on an Online Backup:
+
+```bash
+SESSION_WEAVER_ONTOLOGY_SOURCE=/absolute/path/to/sessions.db \
+  uv run pytest tests/test_ontology_live.py::test_real_corpus_online_backup_acceptance \
+  -m live -W error --no-cov
 ```
 
 ## Lineage

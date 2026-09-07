@@ -1035,3 +1035,43 @@ def test_conflicting_attrs_for_one_stable_individual_are_validation_error(
         rebuild_ontology(conn)
 
     assert ontology_logical_hash(conn) == baseline.logical_hash
+
+
+def test_ontology_tables_are_excluded_from_normal_sync_controls_and_dump_sql() -> None:
+    """Normal delta sync stays positive while every maintained ontology table is local-only."""
+    from agent_session_tools import sync
+
+    assert sync.SYNC_TABLES
+    assert sync.GLOBAL_SYNC_TABLES
+    assert sync.TABLE_SYNC_COLUMNS
+    assert all(sync.TABLE_SYNC_COLUMNS.values())
+    assert sync.GLOBAL_TABLE_PRIMARY_KEYS
+    assert all(sync.GLOBAL_TABLE_PRIMARY_KEYS.values())
+    assert "sessions" in sync.SYNC_TABLES
+    assert set(sync.SYNC_TABLES) <= set(sync.TABLE_SYNC_COLUMNS)
+    assert set(sync.GLOBAL_SYNC_TABLES) <= set(sync.TABLE_SYNC_COLUMNS)
+    assert set(sync.GLOBAL_SYNC_TABLES) <= set(sync.GLOBAL_TABLE_PRIMARY_KEYS)
+
+    normal_allow_lists = (
+        set(sync.SYNC_TABLES),
+        set(sync.GLOBAL_SYNC_TABLES),
+        set(sync.TABLE_SYNC_COLUMNS),
+        set(sync.GLOBAL_TABLE_PRIMARY_KEYS),
+    )
+    for allow_list in normal_allow_lists:
+        assert ONTOLOGY_TABLES.isdisjoint(allow_list)
+
+    available_tables = set().union(*normal_allow_lists, ONTOLOGY_TABLES)
+    dump_sql = "\n".join(
+        sync._build_dump_queries(
+            {"sync-sentinel"},
+            available_tables,
+            include_seq=True,
+            parked_columns=sync.TABLE_SYNC_COLUMNS["parked_topics"],
+        )
+    )
+
+    assert "INSERT INTO sessions" in dump_sql
+    assert "FROM sessions" in dump_sql
+    for table in ONTOLOGY_TABLES:
+        assert table not in dump_sql

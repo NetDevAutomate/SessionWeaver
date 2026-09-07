@@ -1,0 +1,58 @@
+{
+  "backup": {
+    "post_rebuild_sha256": "8ee982d69d647e8d107f8c4d8233aaa4f2d5cb7061113f5606bd01de8d1b57be",
+    "sha256": "a9f87008c1129f3aac670d1b1c2cd1900598e37c9e0ab4d1a72d83ccca35f5e7"
+  },
+  "captured_at_utc": "2026-09-07T14:39:26Z",
+  "counts": {
+    "classes": 7,
+    "individuals": 13336,
+    "properties": 6,
+    "relations": 28766,
+    "structural": 22800
+  },
+  "coverage": {
+    "coverage_ratio": 1.0,
+    "covered_sessions": 5678,
+    "missing_sessions": 0
+  },
+  "evidence_schema": "session-weaver.ontology-tier1-baseline",
+  "evidence_version": 1,
+  "extraction_version": "tier1-v2-canonical-messages",
+  "first_full_rebuild": {
+    "elapsed_seconds": 3.249682,
+    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb"
+  },
+  "incremental_rebuild": {
+    "elapsed_seconds": 1.10533,
+    "fallback_reason": null,
+    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb",
+    "mode": "incremental"
+  },
+  "integrity": {
+    "domain_range_violations": 0,
+    "foreign_key_violations": 0,
+    "orphan_session_individuals": 0,
+    "orphan_structural_rows": 0
+  },
+  "second_full_rebuild": {
+    "elapsed_seconds": 3.288491,
+    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb"
+  },
+  "source": {
+    "message_count": 133559,
+    "schema_version": 544,
+    "session_count": 5678,
+    "sha256": "63fc844b3e146ad6ed54d0c58e5f49a566255841882841abc6657575f789128d",
+    "user_version": 47
+  },
+  "source_sentinels_unchanged": true,
+  "status": {
+    "coverage_at_least_99_percent": true,
+    "extraction_version_matches": true,
+    "fresh": true,
+    "hash_matches": true,
+    "healthy": true,
+    "source_counts_match": true
+  }
+}
