@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Session Weaver \u2014 Knowledge Pipeline",
+    "output": "knowledge-pipeline.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "capture",
+        "label": "Capture",
+        "focus": [
+          "harnesses",
+          "hooks",
+          "exporter",
+          "db"
+        ],
+        "note": "Six harnesses feed one SQLite store through enforced, deterministic export."
+      },
+      {
+        "id": "knowledge",
+        "label": "Knowledge build",
+        "focus": [
+          "db",
+          "tier1",
+          "winddown",
+          "okf"
+        ],
+        "note": "Deterministic ontology at ingest; agent wind-down distils semantic concepts into the OKF store."
+      },
+      {
+        "id": "serve",
+        "label": "Serving agents",
+        "focus": [
+          "okf",
+          "retrieval",
+          "agents"
+        ],
+        "note": "Fusion of OKF concepts with hybrid raw-text search scored best: 0.68 recall@5."
+      }
+    ],
+    "viewBox": [
+      1068,
+      620
+    ]
+  },
+  "stages": [
+    {
+      "label": "Produce"
+    },
+    {
+      "label": "Capture"
+    },
+    {
+      "label": "Store"
+    },
+    {
+      "label": "Distil"
+    },
+    {
+      "label": "Serve"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "harnesses",
+      "type": "external",
+      "label": "Six harnesses",
+      "sublabel": "6 CLI tools",
+      "stage": 0,
+      "row": 1,
+      "tag": "transcripts"
+    },
+    {
+      "id": "hooks",
+      "type": "security",
+      "label": "Enforced capture",
+      "sublabel": "hooks + sweep",
+      "stage": 1,
+      "row": 1,
+      "tag": "BL-3"
+    },
+    {
+      "id": "exporter",
+      "type": "backend",
+      "label": "session-export",
+      "sublabel": "pinned wheel",
+      "stage": 1,
+      "row": 3,
+      "tag": "0 empty rows"
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "sessions.db",
+      "sublabel": "WAL + ontology",
+      "stage": 2,
+      "row": 2,
+      "tag": "system of record"
+    },
+    {
+      "id": "sync",
+      "type": "messagebus",
+      "label": "session-sync",
+      "sublabel": "Mac B / C",
+      "stage": 2,
+      "row": 0,
+      "tag": "no-resurrect"
+    },
+    {
+      "id": "tier1",
+      "type": "backend",
+      "label": "Tier-1 builder",
+      "sublabel": "$0 entities",
+      "stage": 3,
+      "row": 0,
+      "tag": "13k individuals"
+    },
+    {
+      "id": "winddown",
+      "type": "backend",
+      "label": "Wind-down agent",
+      "sublabel": "full-text distil",
+      "stage": 3,
+      "row": 3,
+      "tag": "$17 / 348 sess"
+    },
+    {
+      "id": "okf",
+      "type": "database",
+      "label": "OKF store",
+      "sublabel": "2,033 concepts",
+      "stage": 4,
+      "row": 2,
+      "tag": "provenance"
+    },
+    {
+      "id": "retrieval",
+      "type": "backend",
+      "label": "Fusion retrieval",
+      "sublabel": "OKF+FTS+vectors",
+      "stage": 4,
+      "row": 1,
+      "tag": "0.68 recall@5"
+    },
+    {
+      "id": "agents",
+      "type": "external",
+      "label": "Agents",
+      "sublabel": "context users",
+      "stage": 4,
+      "row": 0
+    }
+  ],
+  "flows": [
+    {
+      "id": "produce",
+      "from": "harnesses",
+      "to": "hooks",
+      "label": "session end",
+      "classification": "native transcripts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "trigger",
+      "from": "hooks",
+      "to": "exporter",
+      "label": "runs",
+      "labelAt": [
+        430,
+        345
+      ]
+    },
+    {
+      "id": "ingest",
+      "from": "exporter",
+      "to": "db",
+      "label": "parse + filter",
+      "classification": "deterministic",
+      "variant": "emphasis"
+    },
+    {
+      "id": "replicate",
+      "from": "db",
+      "to": "sync",
+      "label": "push/pull",
+      "classification": "ssh, idempotent",
+      "variant": "dashed",
+      "labelDy": -34
+    },
+    {
+      "id": "structure",
+      "from": "db",
+      "to": "tier1",
+      "label": "entity resolution",
+      "classification": "typed triples",
+      "variant": "emphasis"
+    },
+    {
+      "id": "distil",
+      "from": "db",
+      "to": "winddown",
+      "label": "full session text",
+      "classification": "semantic"
+    },
+    {
+      "id": "concepts",
+      "from": "winddown",
+      "to": "okf",
+      "label": "concepts",
+      "classification": "Decision \u00b7 Finding \u2026",
+      "variant": "emphasis"
+    },
+    {
+      "id": "graph",
+      "from": "tier1",
+      "to": "retrieval",
+      "label": "graph signal",
+      "classification": "relational"
+    },
+    {
+      "id": "okfserve",
+      "from": "okf",
+      "to": "retrieval",
+      "label": "concept index",
+      "classification": "fusion input",
+      "variant": "emphasis",
+      "labelDx": 96
+    },
+    {
+      "id": "serve",
+      "from": "retrieval",
+      "to": "agents",
+      "label": "top-k + provenance",
+      "classification": "MCP",
+      "variant": "emphasis",
+      "labelDx": 108
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Proven with data",
+      "items": [
+        "OKF+hybrid fusion 0.68 recall@5 \u00b7 keyword 1.00 (raw-text best: 0.48)"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Multi-everything",
+      "items": [
+        "6 harnesses, 2 Macs, subagent lineage \u2014 one store, idempotent sync"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Costs",
+      "items": [
+        "Tier-1 $0/0.2s \u00b7 wind-down $17/348 sessions \u00b7 index rebuild ~1s"
+      ]
+    }
+  ]
+}

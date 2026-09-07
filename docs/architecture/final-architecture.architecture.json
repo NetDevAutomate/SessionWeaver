@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SessionWeaver \u2014 Session Memory & Ontology Architecture",
+    "output": "final-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "capture-path",
+        "label": "Capture path",
+        "focus": [
+          "harnesses",
+          "capture",
+          "exporter",
+          "coredb"
+        ],
+        "note": "Enforced, deterministic ingest from every code harness into the single SQLite system of record."
+      },
+      {
+        "id": "context-path",
+        "label": "Agent context path",
+        "focus": [
+          "coredb",
+          "retrieval",
+          "mcp",
+          "agents"
+        ],
+        "note": "Hybrid retrieval (FTS planner + vectors + RRF) serving agents through MCP \u2014 measured best at 0.62 recall@5."
+      },
+      {
+        "id": "ontology-layer",
+        "label": "Ontology layer",
+        "focus": [
+          "tier1",
+          "ontodb",
+          "winddown",
+          "okf"
+        ],
+        "note": "Deterministic T-Box/A-Box today; agent wind-down entities and OKF projection are the planned tier 2."
+      },
+      {
+        "id": "closed-loop",
+        "label": "The loop",
+        "focus": [
+          "agents",
+          "winddown",
+          "tier1",
+          "ontodb",
+          "retrieval",
+          "mcp"
+        ],
+        "note": "Agents produce sessions; ingest builds the ontology; the ontology feeds retrieval, and wind-down entities will feed it back."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "harnesses",
+      "type": "external",
+      "label": "Code harnesses",
+      "sublabel": "Claude \u00b7 Codex \u00b7 Kiro \u2026",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "capture",
+      "type": "security",
+      "label": "Enforced capture",
+      "sublabel": "hooks + 4h sweep",
+      "pos": [
+        280,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "BL-3"
+    },
+    {
+      "id": "exporter",
+      "type": "backend",
+      "label": "session-export",
+      "sublabel": "pinned wheel",
+      "pos": [
+        520,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "0 empty rows"
+    },
+    {
+      "id": "coredb",
+      "type": "database",
+      "label": "Core tables",
+      "sublabel": "sessions \u00b7 messages \u00b7 FTS5",
+      "pos": [
+        770,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "ontodb",
+      "type": "database",
+      "label": "Ontology tables",
+      "sublabel": "T-Box + A-Box",
+      "pos": [
+        770,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "0 violations"
+    },
+    {
+      "id": "tier1",
+      "type": "backend",
+      "label": "Tier-1 builder",
+      "sublabel": "entity resolution",
+      "pos": [
+        520,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "winddown",
+      "type": "backend",
+      "label": "Agent wind-down",
+      "sublabel": "agents write entities",
+      "pos": [
+        270,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "proven"
+    },
+    {
+      "id": "okf",
+      "type": "external",
+      "label": "OKF projection",
+      "sublabel": "Markdown bundles",
+      "pos": [
+        1020,
+        470
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "proven"
+    },
+    {
+      "id": "retrieval",
+      "type": "backend",
+      "label": "Hybrid retrieval",
+      "sublabel": "FTS + vectors + RRF",
+      "pos": [
+        1020,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "0.62 recall@5"
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "session-db MCP",
+      "sublabel": "agent query surface",
+      "pos": [
+        1020,
+        130
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "agents",
+      "type": "external",
+      "label": "Coding agents",
+      "sublabel": "Kiro \u00b7 Claude \u00b7 Codex",
+      "pos": [
+        770,
+        40
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "messagebus",
+      "label": "session-sync",
+      "sublabel": "ssh \u2192 Mac B / C",
+      "pos": [
+        520,
+        130
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "no-resurrect"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "sessions.db \u2014 one physical SQLite file (WAL)",
+      "wraps": [
+        "coredb",
+        "ontodb"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "harness-capture",
+      "from": "harnesses",
+      "to": "capture",
+      "label": "session end",
+      "variant": "emphasis"
+    },
+    {
+      "id": "capture-exporter",
+      "from": "capture",
+      "to": "exporter",
+      "label": "runs export",
+      "variant": "emphasis"
+    },
+    {
+      "id": "exporter-core",
+      "from": "exporter",
+      "to": "coredb",
+      "label": "parse + filter",
+      "variant": "emphasis"
+    },
+    {
+      "id": "exporter-tier1",
+      "from": "exporter",
+      "to": "tier1",
+      "label": "same ingest",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "tier1-onto",
+      "from": "tier1",
+      "to": "ontodb",
+      "label": "triples"
+    },
+    {
+      "id": "winddown-onto",
+      "from": "winddown",
+      "to": "tier1",
+      "variant": "dashed"
+    },
+    {
+      "id": "onto-okf",
+      "from": "ontodb",
+      "to": "okf",
+      "label": "project",
+      "variant": "dashed"
+    },
+    {
+      "id": "core-retrieval",
+      "from": "coredb",
+      "to": "retrieval",
+      "label": "index",
+      "variant": "emphasis"
+    },
+    {
+      "id": "retrieval-mcp",
+      "from": "retrieval",
+      "to": "mcp",
+      "label": "top-k + provenance",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "mcp-agents",
+      "from": "mcp",
+      "to": "agents",
+      "label": "MCP tools",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "okf-agents",
+      "from": "okf",
+      "to": "agents",
+      "label": "Markdown files",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "right",
+      "via": [
+        [
+          1260,
+          502
+        ],
+        [
+          1260,
+          70
+        ]
+      ]
+    },
+    {
+      "id": "core-sync",
+      "from": "coredb",
+      "to": "sync",
+      "label": "push/pull",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [
+        [
+          845,
+          160
+        ]
+      ]
+    },
+    {
+      "id": "agents-harness",
+      "from": "agents",
+      "to": "harnesses",
+      "label": "work happens here",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          125,
+          70
+        ]
+      ]
+    },
+    {
+      "id": "onto-retrieval",
+      "from": "ontodb",
+      "to": "retrieval",
+      "label": "graph signal",
+      "fromSide": "right",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Measured (PoC 2026-09-06)",
+      "items": [
+        "OKF wind-down + hybrid: 0.68 recall@5, keyword 1.00 \u2014 best of programme",
+        "Ontology: 13,384 individuals \u00b7 28,698 relations \u00b7 0 violations \u00b7 $0"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Provenance & safety",
+      "items": [
+        "Pinned wheel everywhere; sessions-orig.db + packets = rollback",
+        "Sync cannot resurrect deleted rows (sync.py:586-590)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Planned (Phase 2)",
+      "items": [
+        "Wire T2 wind-down + OKF into live MCP (benchmark = acceptance)",
+        "Mac C: pin + clean before first sync"
+      ]
+    }
+  ]
+}
