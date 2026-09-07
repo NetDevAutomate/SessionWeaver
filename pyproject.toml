@@ -21,7 +21,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://www.studyloop.dev/"
-Repository = "https://github.com/NetDevAutomate/session-weaver"
+Repository = "https://github.com/NetDevAutomate/SessionWeaver"
 Source = "https://github.com/NetDevAutomate/StudyLoop"
 
 [project.scripts]

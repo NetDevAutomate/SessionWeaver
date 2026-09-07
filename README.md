@@ -19,7 +19,7 @@ forked), part of the wider [StudyLoop](https://www.studyloop.dev/) system.
 
 ```bash
 # Everything: session tools + skill installer, isolated, on PATH
-uv tool install --from git+https://github.com/NetDevAutomate/session-weaver session-weaver
+uv tool install --from git+https://github.com/NetDevAutomate/SessionWeaver session-weaver
 # …or from a local checkout
 uv tool install --from /path/to/session_weaver session-weaver
 ```
