@@ -27,6 +27,10 @@ may change before `1.0.0`.
   read-only health model for later CLI and doctor integration.
 - Established the Phase 2 test baseline with a 90% coverage gate and an isolated
   production-schema fixture that exercises upstream migrations and session capture.
+- Added the transactional concept core behind `ConceptService`: strict bounded
+  wind-down validation, exact scope-visible evidence binding, immutable bound and
+  legacy roots, append-only deterministic lifecycle events, atomic legacy binding,
+  and derived concept FTS consistency/rebuild support.
 
 ### Fixed
 
