@@ -51,6 +51,7 @@ allow-direct-references = true
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.408",
     "pytest>=8.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.8",
