@@ -24,6 +24,7 @@ from .installer import install_skill, status, uninstall_skill
 from .okf import ImportReport
 from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
 from .projection import ProjectionReport
+from .recall import RecallReport, recall
 from .safe_fs import _FILE_CREATE_FLAGS, _open_directory_nofollow
 from .winddown import MAX_REQUEST_BYTES, _Issue
 
@@ -65,6 +66,18 @@ def _nonempty_type(label: str) -> Any:
 
 def _nonempty_db_arg(value: str) -> str:
     return _nonempty(value, "--db")
+
+
+def _k_arg(value: str) -> int:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("--k must not be empty")
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--k must be an integer between 1 and 50") from exc
+    if not 1 <= parsed <= 50:
+        raise argparse.ArgumentTypeError("--k must be an integer between 1 and 50")
+    return parsed
 
 
 def _db_arg(parser: argparse.ArgumentParser) -> None:
@@ -146,6 +159,15 @@ def build_parser() -> argparse.ArgumentParser:
     winddown_input.add_argument("--from", dest="input_file", type=_nonempty_type("--from"))
     winddown_input.add_argument("--stdin", action="store_true")
     _concept_common_args(p_winddown, default_actor=_DEFAULT_WINDDOWN_ACTOR)
+
+    p_recall = sub.add_parser(
+        "recall", help="concept-first AND->OR recall over concepts then sessions"
+    )
+    p_recall.add_argument("question", type=_nonempty_type("question"))
+    p_recall.add_argument("--k", default=5, type=_k_arg)
+    p_recall.add_argument("--project", default=None, type=_nonempty_type("--project"))
+    p_recall.add_argument("--json", action="store_true", help="emit deterministic JSON")
+    _db_arg(p_recall)
 
     p_concept = sub.add_parser("concept", help="manage concept lifecycle and legacy imports")
     concept_sub = p_concept.add_subparsers(dest="concept_command", required=True)
@@ -552,6 +574,36 @@ def _concept_project(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _recall_payload(report: RecallReport) -> dict[str, Any]:
+    return {"command": "recall", **report.to_dict()}
+
+
+def _print_recall_text(report: RecallReport) -> None:
+    print(f"concepts ({len(report.concepts)}):")
+    for concept in report.concepts:
+        print(
+            f"  [{concept.kind}] {concept.title}"
+            f" ({concept.provenance_label}, standing={concept.standing})"
+        )
+        print(f"    {concept.statement}")
+    print(f"sessions ({len(report.sessions)}):")
+    for session in report.sessions:
+        print(f"  [{session.source}] {session.session_id} {session.project_path or ''}")
+        print(f"    {session.preview}")
+
+
+def _recall(args: argparse.Namespace) -> int:
+    try:
+        report = recall(_database_path(args.db), args.question, k=args.k, project=args.project)
+    except Exception:
+        return _runtime_failure("recall")
+    if args.json:
+        _emit_json(_recall_payload(report))
+    else:
+        _print_recall_text(report)
+    return 0
+
+
 def _ontology_rebuild(db_arg: str | None, *, incremental: bool) -> int:
     started = perf_counter()
     try:
@@ -663,6 +715,8 @@ def main(argv: list[str] | None = None) -> int:
         return _ontology_status(args.db)
     if args.command == "winddown":
         return _winddown(args)
+    if args.command == "recall":
+        return _recall(args)
     if args.command == "concept":
         if args.concept_command in ("accept", "retire"):
             return _concept_transition(args)

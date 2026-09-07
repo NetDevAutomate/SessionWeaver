@@ -111,6 +111,7 @@ class _EvidenceResolver:
         self._context = context
         self._session_id = session_id
         self._sources: dict[str, str] | None = None
+        self._sources_degrade_oversized: bool | None = None
         self._oversized_evidence_count = 0
 
     def _visible_sources(self, *, degrade_oversized: bool = False) -> dict[str, str]:
@@ -127,8 +128,17 @@ class _EvidenceResolver:
         raising, and counted in ``self._oversized_evidence_count``. The oversized
         body itself is never loaded into memory: its length is checked directly
         against the already-fetched ``context_evidence.body`` column length.
+
+        The cache is keyed on ``degrade_oversized``: every caller of one
+        resolver instance must agree on the flag, since a mismatched second
+        call would otherwise silently return the first call's degraded (or
+        undegraded) mapping under the other mode.
         """
         if self._sources is not None:
+            if degrade_oversized != self._sources_degrade_oversized:
+                raise RuntimeError(
+                    "_visible_sources was called with a different degrade_oversized flag"
+                )
             return self._sources
         store_clause, store_params = self._context.store._where(self._context.access)
         visibility_clause, visibility_params = visibility_sql(
@@ -158,6 +168,7 @@ class _EvidenceResolver:
             if source is not None:
                 sources[identity] = source["body"]
         self._sources = sources
+        self._sources_degrade_oversized = degrade_oversized
         self._oversized_evidence_count = oversized_evidence_count
         return sources
 

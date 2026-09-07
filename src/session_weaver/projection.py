@@ -20,6 +20,7 @@ from agent_session_tools.context.public import AgentContext, open_context
 from agent_session_tools.context.response import read_boundary
 from agent_session_tools.context.scope import ScopeError
 
+from .authorization import _current_standings, authorized_concepts
 from .concept_schema import verify_installed_schema
 from .safe_fs import (
     _DIRECTORY_OPEN_FLAGS,
@@ -168,47 +169,27 @@ def _require_concept_schema(conn: sqlite3.Connection) -> None:
     verify_installed_schema(conn)
 
 
-def _current_standings(context: AgentContext) -> list[tuple[str, str]]:
-    return [
-        (cast(str, row[0]), cast(str, row[1]))
-        for row in context.conn.execute(
-            """WITH ranked AS (
-                 SELECT concept_id,standing,
-                   row_number() OVER (
-                     PARTITION BY concept_id
-                     ORDER BY CASE standing WHEN 'retired' THEN 2
-                                            WHEN 'accepted' THEN 1 ELSE 0 END DESC,
-                              logical_time DESC,origin_instance DESC,origin_seq DESC,id DESC
-                   ) AS position
-                 FROM context_concept_events
-               )
-               SELECT c.id,r.standing
-               FROM context_concepts c
-               JOIN ranked r ON r.concept_id=c.id AND r.position=1
-               ORDER BY c.id"""
-        )
-    ]
-
-
 def _capture_snapshot(context: AgentContext) -> _Snapshot:
-    from .concepts import _ConceptRepository
-
     _require_concept_schema(context.conn)
-    repository = _ConceptRepository(context.conn)
     concepts: list[_ProjectedConcept] = []
     skipped_unavailable = 0
     skipped_retired = 0
     logical_rows: list[object] = []
+    authorized_by_id = {
+        authorized.concept_id: authorized
+        for authorized in authorized_concepts(context, project=context.project)
+    }
     for concept_id, standing in _current_standings(context):
         if standing == "retired":
             skipped_retired += 1
             logical_rows.append((concept_id, standing, "retired"))
             continue
-        root = repository.authorized_root(context, concept_id)
-        if root is None:
+        authorized = authorized_by_id.get(concept_id)
+        if authorized is None:
             skipped_unavailable += 1
             logical_rows.append((concept_id, standing, "unavailable"))
             continue
+        root = authorized.root
         concept = _ProjectedConcept(
             concept_id=concept_id,
             assertion_id=cast(str | None, root["assertion_id"]),

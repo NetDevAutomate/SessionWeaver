@@ -9,6 +9,22 @@ may change before `1.0.0`.
 
 ### Added
 
+- Added `session-weaver recall "<question>" [--k N] [--project ID] [--db PATH]
+  [--json]` and the `recall()` seam: concept-first, AND→OR keyword recall over
+  concepts (ranked by `bm25`, ties broken by full concept ID, authorized through
+  the same seam `concept project` uses) followed by deduplicated raw-text
+  session hits from `messages_fts`, excluding any session already cited by a
+  returned concept. Legacy-unbound concepts are returned labelled
+  `legacy-unbound (session-level provenance)` with empty citations, never
+  silently upgraded. The AND→OR planner (tokenize, drop pinned stop words and
+  short tokens, quote every term for FTS5) is ported verbatim from the
+  storage-decision PoC. Ships with **no embeddings** and never consults the
+  tier-1 ontology tables; the report shape is frozen and schema-checked
+  against `docs/data/recall-contract.json`.
+- Extracted the concept-selection/authorization logic `concept project` used
+  into `authorization.authorized_concepts`, a single shared seam now used by
+  both projection and recall so they can never disagree about which concept
+  roots are visible under the caller's scope.
 - Added `session-weaver ontology rebuild [--incremental] [--db PATH]` and
   read-only `session-weaver ontology status [--db PATH]` with deterministic,
   content-free JSON output and explicit success/unhealthy/usage exit semantics.
