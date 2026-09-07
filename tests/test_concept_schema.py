@@ -327,3 +327,78 @@ def test_fts_consistency_receipt_and_rebuild_are_stable_and_content_derived(
     assert rebuilt.consistent is True
     assert rebuilt.row_count == rebuilt.expected_count == 2
     assert rebuilt.digest == repeated.digest == before.digest
+
+
+def test_sidecar_v2_allows_null_session_only_for_unavailable_legacy_roots(
+    production_store: ProductionStore,
+) -> None:
+    from session_weaver.concepts import _ConceptRepository
+
+    assert SCHEMA_VERSION == 2
+    conn = production_store.conn
+    _ensure_schema(conn)
+    evidence_id, evidence_body = conn.execute(
+        """SELECT id,body FROM context_evidence
+           WHERE session_id='fixture-session-1' ORDER BY id LIMIT 1"""
+    ).fetchone()
+    repo = _ConceptRepository(conn, now=lambda: "2026-09-08T00:00:00+00:00")
+    legacy_id = repo.seed_legacy(
+        original_bytes=b"nullable unavailable legacy source",
+        kind="Finding",
+        title="Unavailable legacy root",
+        statement=evidence_body,
+        tags=("legacy", "unavailable"),
+        confidence=0.7,
+        source_session_id=None,
+        source_uri="sessionweaver://session/fixture-session-1",
+        producer="legacy-import",
+    )
+    conn.commit()
+
+    assert conn.execute(
+        "SELECT source_session_id,source_uri FROM context_concepts WHERE id=?",
+        (legacy_id,),
+    ).fetchone() == (None, "sessionweaver://session/fixture-session-1")
+
+    legacy_sha = legacy_id.removeprefix("legacy:")
+    for origin in ("winddown", "legacy-bind"):
+        assertion_id = hashlib.sha256(f"null-session:{origin}".encode()).hexdigest()
+        conn.execute(
+            """INSERT INTO context_assertions
+               (id,statement,proposed_state,proposed_target,generator,created_at)
+               VALUES (?,?, 'unknown',NULL,'direct-test','2026-09-08')""",
+            (assertion_id, evidence_body),
+        )
+        conn.execute(
+            """INSERT INTO context_citations
+               (assertion_id,evidence_id,start_offset,end_offset,quote)
+               VALUES (?,?,?,?,?)""",
+            (assertion_id, evidence_id, 0, len(evidence_body), evidence_body),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """INSERT INTO context_concepts(
+                   id,assertion_id,binding_state,origin,kind,title,statement,canonical_tags,
+                   confidence,source_session_id,source_uri,producer,created_at,
+                   legacy_file_sha256,supersedes_concept_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    assertion_id,
+                    assertion_id,
+                    "bound",
+                    origin,
+                    "Finding",
+                    "Unavailable legacy root" if origin == "legacy-bind" else "Bound root",
+                    evidence_body,
+                    '["legacy","unavailable"]' if origin == "legacy-bind" else '["bound","root"]',
+                    0.7,
+                    None,
+                    "sessionweaver://session/fixture-session-1",
+                    "legacy-import" if origin == "legacy-bind" else "direct-test",
+                    "2026-09-08T00:00:00+00:00",
+                    legacy_sha if origin == "legacy-bind" else None,
+                    legacy_id if origin == "legacy-bind" else None,
+                ),
+            )
+
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

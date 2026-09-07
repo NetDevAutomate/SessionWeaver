@@ -38,6 +38,21 @@ may change before `1.0.0`.
 
 ### Fixed
 
+- Preserved every parseable frozen-writer OKF record by reporting and lowercasing
+  canonicalizable legacy tag case without changing original-byte identities; the
+  disposable-copy receipt now reconciles all 2,033 roots and idempotent hits.
+- Made unavailable legacy provenance privacy-safe: hidden and absent claimed sessions
+  are report-indistinguishable, retain only their source URI with a nullable FK, and can
+  produce a bound successor only after the real claimed session becomes scope-visible.
+  Bound and wind-down roots still require a real session under sidecar schema v2.
+- Validated import actor/project bounds and authorization scope before source scanning,
+  returning exit-2 operation errors with reconciled zero counters.
+- Anchored recursive OKF reads and atomic report replacement to securely opened directory
+  descriptors, rejecting symlink components at open time and closing intermediate-swap
+  races.
+- Reported post-commit report-delivery failures as truthful partial success with durable
+  write/import counters and `committed=true`, rather than falsely claiming zero writes.
+
 - Made concept schema verification independent of SQLite row factories so the
   reviewed sidecar can be verified inside an `open_context` transaction.
 - Closed temporary report descriptors when atomic report setup fails before file

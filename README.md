@@ -55,13 +55,20 @@ session-weaver concept import-okf /path/to/okf --dry-run --report -
 
 Concept writes target the same SQLite database as the session tools and return
 content-free structured JSON. Legacy OKF import is recursive and deterministic: every
-valid file starts as `legacy-unbound`; the historical `machine-confirmed` label never
+parseable frozen-writer record starts as `legacy-unbound`; canonicalizable legacy tag
+case is reported and normalized to the A3a lowercase form while immutable identity
+continues to hash the original bytes. The historical `machine-confirmed` label never
 becomes acceptance. Only one literal occurrence of the **full Markdown body** in
-scope-visible evidence creates a new proposed bound successor. Zero matches, ambiguity,
-missing/hidden evidence, and oversized citation bodies remain unbound. `--dry-run`
-performs the same classification with zero writes, and repeated imports add no rows or
-events. Projection remains deliberately out of scope. The sanitized disposable-copy receipt
-is [`legacy-okf-import-baseline.json`](docs/data/legacy-okf-import-baseline.json).
+scope-visible evidence creates a new proposed bound successor. Missing or hidden claimed
+sessions retain their source URI with no fabricated session/FK and remain unavailable
+until the real session becomes scope-visible and can be bound safely. Zero matches,
+ambiguity, no visible evidence, and oversized citation bodies remain unbound. Source
+traversal and report replacement are anchored to securely opened directory descriptors;
+if report delivery fails after commit, the CLI returns exit 1 with truthful committed
+write counters. `--dry-run` performs the same classification with zero writes, and
+repeated imports add no rows or events. Projection remains deliberately out of scope. The
+sanitized disposable-copy receipt, including all 2,033 imported records, is
+[`legacy-okf-import-baseline.json`](docs/data/legacy-okf-import-baseline.json).
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a

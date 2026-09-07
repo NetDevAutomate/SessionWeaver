@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 UPSTREAM_SCHEMA_VERSION = 47
 _SQLITE_MAX_INTEGER = (1 << 63) - 1
 _MAX_COUNTER = _SQLITE_MAX_INTEGER - 1
@@ -45,7 +45,7 @@ _PAYLOAD_OBJECTS = (
                 CHECK(json_valid(canonical_tags) AND json_type(canonical_tags)='array'),
             confidence REAL NOT NULL
                 CHECK(typeof(confidence) IN ('real','integer') AND confidence BETWEEN 0.5 AND 1.0),
-            source_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            source_session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
             source_uri TEXT NOT NULL CHECK(length(trim(source_uri))>0),
             producer TEXT NOT NULL CHECK(length(trim(producer))>0),
             created_at TEXT NOT NULL CHECK(length(trim(created_at))>0),
@@ -57,13 +57,18 @@ _PAYLOAD_OBJECTS = (
             CHECK(
               (origin='winddown' AND binding_state='bound' AND assertion_id=id
                 AND id NOT LIKE 'legacy:%' AND legacy_file_sha256 IS NULL
+                AND source_session_id IS NOT NULL
                 AND supersedes_concept_id IS NULL)
               OR
               (origin='legacy-okf' AND binding_state='legacy-unbound' AND assertion_id IS NULL
-                AND id='legacy:' || legacy_file_sha256 AND supersedes_concept_id IS NULL)
+                AND id='legacy:' || legacy_file_sha256 AND supersedes_concept_id IS NULL
+                AND (source_session_id IS NOT NULL OR
+                  (source_uri LIKE 'sessionweaver://session/%'
+                    AND length(source_uri)>length('sessionweaver://session/'))))
               OR
               (origin='legacy-bind' AND binding_state='bound' AND assertion_id=id
                 AND id NOT LIKE 'legacy:%' AND legacy_file_sha256 IS NOT NULL
+                AND source_session_id IS NOT NULL
                 AND supersedes_concept_id IS NOT NULL)
             )
         )""",
@@ -184,7 +189,13 @@ _PAYLOAD_OBJECTS = (
             AND previous.statement=NEW.statement
             AND previous.canonical_tags=NEW.canonical_tags
             AND previous.confidence=NEW.confidence
-            AND previous.source_session_id=NEW.source_session_id
+            AND (
+              (previous.source_session_id IS NOT NULL
+                AND previous.source_session_id=NEW.source_session_id)
+              OR
+              (previous.source_session_id IS NULL
+                AND previous.source_uri='sessionweaver://session/' || NEW.source_session_id)
+            )
             AND previous.source_uri=NEW.source_uri
             AND previous.producer=NEW.producer
             AND previous.legacy_file_sha256=NEW.legacy_file_sha256

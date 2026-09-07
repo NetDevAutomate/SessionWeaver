@@ -8,12 +8,12 @@ import os
 import sqlite3
 import stat
 import sys
-import tempfile
-from contextlib import closing
-from dataclasses import asdict
+from contextlib import closing, suppress
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, TextIO
+from uuid import uuid4
 
 from agent_session_tools.context.scope import ScopeError
 
@@ -23,6 +23,7 @@ from .harnesses import HARNESSES, parse_harness_selection
 from .installer import install_skill, status, uninstall_skill
 from .okf import ImportReport
 from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
+from .safe_fs import _FILE_CREATE_FLAGS, _open_directory_nofollow
 from .winddown import MAX_REQUEST_BYTES, _Issue
 
 _DEFAULT_WINDDOWN_ACTOR = "session-weaver/winddown"
@@ -35,6 +36,12 @@ class _InputFailure(ValueError):
         self.code = code
         self.message = message
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class _ReportTarget:
+    parent_descriptor: int
+    name: str
 
 
 def _harness_arg(parser: argparse.ArgumentParser) -> None:
@@ -262,35 +269,65 @@ def _read_stdin() -> bytes:
 
 def _safe_import_directory(value: str) -> Path:
     root = Path(value).expanduser()
-    if root.is_symlink() or not root.is_dir():
-        raise _InputFailure("unsafe_directory", "Directory must be a non-symlink directory")
+    try:
+        descriptor = _open_directory_nofollow(root)
+    except OSError as exc:
+        raise _InputFailure(
+            "unsafe_directory", "Directory must be a non-symlink directory"
+        ) from exc
+    os.close(descriptor)
     return root
 
 
-def _safe_report_target(value: str | None) -> Path | None:
+def _safe_report_target(value: str | None) -> _ReportTarget | None:
     if value in (None, "-"):
         return None
     target = Path(value).expanduser()
-    parent = target.parent
-    if (
-        target.is_symlink()
-        or (target.exists() and not target.is_file())
-        or parent.is_symlink()
-        or not parent.is_dir()
-    ):
+    if target.name in ("", ".", ".."):
         raise _InputFailure("unsafe_report_target", "Report target is unsafe")
-    return target
+    try:
+        parent_descriptor = _open_directory_nofollow(target.parent)
+    except OSError as exc:
+        raise _InputFailure("unsafe_report_target", "Report target is unsafe") from exc
+    try:
+        try:
+            metadata = os.stat(
+                target.name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISREG(metadata.st_mode):
+                raise _InputFailure("unsafe_report_target", "Report target is unsafe")
+        return _ReportTarget(parent_descriptor=parent_descriptor, name=target.name)
+    except Exception:
+        os.close(parent_descriptor)
+        raise
 
 
-def _write_report_atomic(target: Path, payload: dict[str, Any]) -> None:
+def _write_report_atomic(target: _ReportTarget, payload: dict[str, Any]) -> None:
     encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=target.parent,
-        prefix=".session-weaver-",
-        suffix=".tmp",
-    )
-    temporary = Path(temporary_name)
+    descriptor: int | None = None
+    temporary_name = ""
+    for _ in range(16):
+        temporary_name = f".session-weaver-{uuid4().hex}.tmp"
+        try:
+            descriptor = os.open(
+                temporary_name,
+                _FILE_CREATE_FLAGS,
+                0o600,
+                dir_fd=target.parent_descriptor,
+            )
+            break
+        except FileExistsError:
+            continue
+    if descriptor is None:
+        raise OSError("Unable to allocate a private report temporary file")
+
     descriptor_open = True
+    temporary_exists = True
     try:
         os.fchmod(descriptor, 0o600)
         stream = os.fdopen(descriptor, "wb")
@@ -299,14 +336,31 @@ def _write_report_atomic(target: Path, payload: dict[str, Any]) -> None:
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        if target.is_symlink() or (target.exists() and not target.is_file()):
-            raise _InputFailure("unsafe_report_target", "Report target became unsafe")
-        os.replace(temporary, target)
+        try:
+            metadata = os.stat(
+                target.name,
+                dir_fd=target.parent_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISREG(metadata.st_mode):
+                raise _InputFailure("unsafe_report_target", "Report target became unsafe")
+        os.replace(
+            temporary_name,
+            target.name,
+            src_dir_fd=target.parent_descriptor,
+            dst_dir_fd=target.parent_descriptor,
+        )
+        temporary_exists = False
+        os.fsync(target.parent_descriptor)
     finally:
         if descriptor_open:
             os.close(descriptor)
-        if temporary.exists():
-            temporary.unlink()
+        if temporary_exists:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary_name, dir_fd=target.parent_descriptor)
 
 
 def _batch_payload(result: BatchResult) -> dict[str, Any]:
@@ -408,6 +462,7 @@ def _concept_bind(args: argparse.Namespace) -> int:
 
 
 def _concept_import(args: argparse.Namespace) -> int:
+    report_target: _ReportTarget | None = None
     try:
         root = _safe_import_directory(args.directory)
         report_target = _safe_report_target(args.report)
@@ -424,12 +479,29 @@ def _concept_import(args: argparse.Namespace) -> int:
         )
         payload = report.to_dict()
         if report_target is not None:
-            _write_report_atomic(report_target, payload)
+            try:
+                _write_report_atomic(report_target, payload)
+            except Exception:
+                operation_error = any(error.relative_path == "" for error in report.errors)
+                partial = {
+                    **payload,
+                    "committed": bool(
+                        not args.dry_run and not report.write_failures and not operation_error
+                    ),
+                    "error": "operation failed",
+                    "report_error": "report_delivery_failed",
+                }
+                _emit_json(partial, error=True)
+                return 1
     except _InputFailure as failure:
         _emit_json(_input_error_payload("concept import-okf", failure), error=True)
         return 2
     except Exception:
         return _runtime_failure("concept import-okf")
+    finally:
+        if report_target is not None:
+            with suppress(OSError):
+                os.close(report_target.parent_descriptor)
     if report.write_failures:
         _emit_json(payload, error=True)
         return 1

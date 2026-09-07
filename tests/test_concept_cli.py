@@ -720,3 +720,195 @@ def test_unavailable_project_is_structured_resolution_exit_two(
         ).fetchone()
         is None
     )
+
+
+def _assert_zero_import_counters(payload: dict[str, Any]) -> None:
+    counter_names = {
+        "scanned",
+        "parsed",
+        "invalid_yaml",
+        "invalid_schema",
+        "unsafe_path",
+        "duplicate_content",
+        "already_present",
+        "bound",
+        "legacy_unbound",
+        "missing_session",
+        "no_visible_evidence",
+        "no_exact_match",
+        "ambiguous_match",
+        "body_description_mismatch",
+        "imported",
+        "write_failures",
+        "writes",
+    }
+    assert all(payload[name] == 0 for name in counter_names)
+
+
+@pytest.mark.parametrize(
+    ("option", "field"),
+    [("--actor", "/actor"), ("--project", "/project")],
+)
+def test_import_overlong_call_fields_are_exit_two_with_zero_reconciled_counters(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    field: str,
+) -> None:
+    root = tmp_path / f"overlong-{option.removeprefix('--')}"
+    root.mkdir()
+    _write(root / "concept.md", _okf_bytes())
+
+    assert (
+        main(
+            [
+                "concept",
+                "import-okf",
+                str(root),
+                option,
+                "x" * 129,
+                "--db",
+                str(production_store.db_path),
+            ]
+        )
+        == 2
+    )
+    payload = _json_output(capsys, error=True)
+
+    _assert_zero_import_counters(payload)
+    assert payload["errors"] == [{"path": "", "code": "too_long", "field": field}]
+    assert (
+        production_store.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='context_concepts'"
+        ).fetchone()
+        is None
+    )
+
+
+def test_import_unavailable_project_is_exit_two_with_zero_reconciled_counters(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "unavailable-project-zero-counters"
+    root.mkdir()
+    _write(root / "concept.md", _okf_bytes())
+
+    assert (
+        main(
+            [
+                "concept",
+                "import-okf",
+                str(root),
+                "--project",
+                "unavailable-project",
+                "--db",
+                str(production_store.db_path),
+            ]
+        )
+        == 2
+    )
+    payload = _json_output(capsys, error=True)
+
+    _assert_zero_import_counters(payload)
+    assert payload["errors"] == [{"path": "", "code": "project_unavailable", "field": "/project"}]
+
+
+def test_report_intermediate_directory_swap_stays_on_pinned_descriptor(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import session_weaver.cli as cli_module
+
+    root = tmp_path / "report-swap-okf"
+    root.mkdir()
+    _write(root / "concept.md", _okf_bytes())
+    report_parent = tmp_path / "report-parent"
+    report_parent.mkdir()
+    pinned_parent = tmp_path / "pinned-report-parent"
+    outside = tmp_path / "outside-report-parent"
+    outside.mkdir()
+    report = report_parent / "report.json"
+    real_write = cli_module._write_report_atomic
+
+    def swap_parent_then_write(target: object, payload: dict[str, Any]) -> None:
+        report_parent.rename(pinned_parent)
+        report_parent.symlink_to(outside, target_is_directory=True)
+        real_write(target, payload)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_module, "_write_report_atomic", swap_parent_then_write)
+
+    assert (
+        main(
+            [
+                "concept",
+                "import-okf",
+                str(root),
+                "--report",
+                str(report),
+                "--db",
+                str(production_store.db_path),
+            ]
+        )
+        == 0
+    )
+    payload = _json_output(capsys)
+
+    assert json.loads((pinned_parent / "report.json").read_text()) == payload
+    assert not (outside / "report.json").exists()
+    assert list(pinned_parent.glob(".session-weaver-*.tmp")) == []
+    assert list(outside.glob(".session-weaver-*.tmp")) == []
+
+
+def test_post_commit_report_failure_emits_truthful_partial_success_and_keeps_rows(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "post-commit-report-failure"
+    root.mkdir()
+    payload_bytes = _okf_bytes(title="Durable despite report failure")
+    _write(root / "concept.md", payload_bytes)
+    report = tmp_path / "failed-report.json"
+
+    def fail_permissions(_descriptor: int, _mode: int) -> None:
+        raise OSError("PRIVATE-POST-COMMIT-REPORT-FAILURE")
+
+    monkeypatch.setattr("session_weaver.cli.os.fchmod", fail_permissions)
+
+    assert (
+        main(
+            [
+                "concept",
+                "import-okf",
+                str(root),
+                "--report",
+                str(report),
+                "--db",
+                str(production_store.db_path),
+            ]
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.err)
+
+    assert payload["committed"] is True
+    assert payload["report_error"] == "report_delivery_failed"
+    assert payload["error"] == "operation failed"
+    assert payload["parsed"] == 1
+    assert payload["imported"] == 1
+    assert payload["writes"] == 1
+    assert payload["write_failures"] == 0
+    assert "PRIVATE-POST-COMMIT-REPORT-FAILURE" not in captured.err
+    expected_id = "legacy:" + __import__("hashlib").sha256(payload_bytes).hexdigest()
+    assert production_store.conn.execute(
+        "SELECT id FROM context_concepts WHERE id=?",
+        (expected_id,),
+    ).fetchone() == (expected_id,)
+    assert not report.exists()
+    assert list(tmp_path.glob(".session-weaver-*.tmp")) == []

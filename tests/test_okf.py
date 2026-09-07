@@ -425,9 +425,13 @@ def test_dry_run_classifies_full_body_against_visible_evidence_with_zero_writes(
     elif classification == "missing":
         session_id = "absent-session"
     elif classification == "no-evidence":
+        session_id = "visible-empty-session"
         production_store.conn.execute(
-            "INSERT INTO context_tombstones VALUES (?,?,?)",
-            (session_id, "hide-fixture-session", _NOW),
+            """INSERT INTO sessions(
+               id,source,project_path,git_branch,created_at,updated_at,metadata)
+               SELECT ?,source,project_path,git_branch,created_at,updated_at,metadata
+               FROM sessions WHERE id='fixture-session-1'""",
+            (session_id,),
         )
         production_store.conn.commit()
     elif classification == "ambiguous":
@@ -797,7 +801,7 @@ def test_body_description_mismatch_is_counted_even_when_other_schema_is_invalid(
     root = tmp_path / "okf-invalid-schema-mismatch"
     root.mkdir()
     payload = _okf_bytes(description="summary", body="different full body").replace(
-        b'tags: ["legacy", "synthetic"]', b'tags: ["Legacy", "synthetic"]'
+        b'tags: ["legacy", "synthetic"]', b'tags: ["bad tag", "synthetic"]'
     )
     _write(root, "invalid-tags.md", payload)
 
@@ -822,3 +826,281 @@ def test_non_string_yaml_field_names_are_content_free_schema_errors(tmp_path: Pa
         error.code == "invalid_field_name" and error.field == "/" for error in scan.report.errors
     )
     assert "hidden" not in json.dumps(scan.report.to_dict())
+
+
+def test_writer_uppercase_tags_are_normalized_and_reported_without_identity_change(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "okf-uppercase-tags"
+    root.mkdir()
+    payload = _okf_bytes(tags=("Legacy", "SYNTHETIC"))
+    source = _write(root, "uppercase.md", payload)
+
+    scan = _scan_okf(root)
+
+    assert source.read_bytes() == payload
+    assert scan.report.parsed == 1
+    assert scan.report.invalid_schema == 0
+    assert scan.records[0].tags == ("legacy", "synthetic")
+    assert scan.records[0].legacy_id == "legacy:" + hashlib.sha256(payload).hexdigest()
+    assert _error_rows(scan) == [
+        {"path": "uppercase.md", "code": "normalized_tag", "field": "/tags/0"},
+        {"path": "uppercase.md", "code": "normalized_tag", "field": "/tags/1"},
+    ]
+
+
+def test_source_intermediate_directory_swap_is_rejected_at_descriptor_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import session_weaver.okf as okf_module
+
+    root = tmp_path / "okf-swap"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    _write(nested, "concept.md", _okf_bytes(title="Original safe record"))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _write(
+        outside,
+        "concept.md",
+        _okf_bytes(
+            title="PRIVATE-SWAPPED-RECORD",
+            description="PRIVATE-SWAPPED-RECORD",
+        ),
+    )
+    pinned_nested = root / "pinned-nested"
+    real_read = okf_module._read_bounded
+    swapped = False
+
+    def swap_before_read(*args: Any, **kwargs: Any) -> tuple[bytes | None, str | None]:
+        nonlocal swapped
+        if not swapped:
+            nested.rename(pinned_nested)
+            nested.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(okf_module, "_read_bounded", swap_before_read)
+
+    scan = okf_module._scan_okf(root)
+
+    assert swapped is True
+    assert scan.report.scanned == 1
+    assert scan.report.parsed == 0
+    assert scan.report.unsafe_path == 1
+    assert scan.records == ()
+    assert "PRIVATE-SWAPPED-RECORD" not in json.dumps(scan.report.to_dict())
+
+
+@pytest.mark.parametrize(
+    ("actor", "project", "field"),
+    [
+        ("x" * 129, None, "/actor"),
+        ("fixture-importer", "x" * 129, "/project"),
+    ],
+)
+def test_import_call_validation_precedes_scan_and_reconciles_zero_counters(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    actor: str,
+    project: str | None,
+    field: str,
+) -> None:
+    import session_weaver.concepts as concepts_module
+
+    def unexpected_scan(_root: Path) -> object:
+        raise AssertionError("invalid call fields must be rejected before source scanning")
+
+    monkeypatch.setattr(concepts_module, "_scan_okf", unexpected_scan)
+    service = ConceptService(production_store.db_path, now=lambda: _NOW, prepare_schema=False)
+
+    report = service.import_okf(
+        tmp_path / "must-not-open",
+        actor=actor,
+        project=project,
+        dry_run=True,
+    )
+    payload = report.to_dict()
+
+    assert all(payload[name] == 0 for name in _COUNTER_KEYS)
+    assert [error.to_dict() for error in report.errors] == [
+        {"path": "", "code": "too_long", "field": field}
+    ]
+    assert (
+        production_store.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='context_concepts'"
+        ).fetchone()
+        is None
+    )
+
+
+def test_hidden_and_absent_session_reports_are_indistinguishable(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    production_store.conn.execute(
+        "INSERT INTO context_tombstones VALUES (?,?,?)",
+        ("fixture-session-1", "hide-for-oracle-test", _NOW),
+    )
+    production_store.conn.commit()
+    hidden_root = tmp_path / "hidden"
+    absent_root = tmp_path / "absent"
+    hidden_root.mkdir()
+    absent_root.mkdir()
+    _write(hidden_root, "concept.md", _okf_bytes(session_id="fixture-session-1"))
+    _write(absent_root, "concept.md", _okf_bytes(session_id="absent-session"))
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    hidden = service.import_okf(hidden_root, actor="fixture-importer", dry_run=True)
+    absent = service.import_okf(absent_root, actor="fixture-importer", dry_run=True)
+
+    assert hidden.to_dict() == absent.to_dict()
+    assert hidden.missing_session == absent.missing_session == 1
+    assert hidden.no_visible_evidence == absent.no_visible_evidence == 0
+    assert hidden.legacy_unbound == absent.legacy_unbound == 1
+
+
+def test_write_import_preserves_missing_session_root_and_other_record_atomically(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "okf-missing-session-write"
+    root.mkdir()
+    bound_body = "Visible exact evidence imported beside an unavailable session."
+    _capture(production_store, bound_body, key="missing-session-companion")
+    bound_payload = _okf_bytes(title="Visible companion", body=bound_body)
+    missing_payload = _okf_bytes(
+        title="Unavailable source",
+        body="The claimed source session is unavailable.",
+        session_id="absent-session",
+    )
+    _write(root, "a-bound.md", bound_payload)
+    _write(root, "b-missing.md", missing_payload)
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    result = service.import_okf(root, actor="fixture-importer")
+
+    missing_id = "legacy:" + hashlib.sha256(missing_payload).hexdigest()
+    assert result.parsed == 2
+    assert result.bound == 1
+    assert result.missing_session == 1
+    assert result.legacy_unbound == 1
+    assert result.imported == 2
+    assert result.write_failures == 0
+    assert result.writes == 6
+    assert production_store.conn.execute(
+        """SELECT binding_state,source_session_id,source_uri
+           FROM context_concepts WHERE id=?""",
+        (missing_id,),
+    ).fetchone() == (
+        "legacy-unbound",
+        None,
+        "sessionweaver://session/absent-session",
+    )
+    assert production_store.conn.execute(
+        "SELECT standing FROM context_concept_events WHERE concept_id=?",
+        (missing_id,),
+    ).fetchone() == ("proposed",)
+    assert production_store.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_hidden_legacy_root_remains_null_and_unavailable(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "okf-hidden-bind"
+    root.mkdir()
+    body = "Exact evidence for a hidden legacy root."
+    _capture(production_store, body, key="hidden-root-bind")
+    production_store.conn.execute(
+        "INSERT INTO context_tombstones VALUES (?,?,?)",
+        ("fixture-session-1", "hidden-root-remains-unavailable", _NOW),
+    )
+    production_store.conn.commit()
+    payload = _okf_bytes(title="Hidden root", body=body)
+    _write(root, "hidden.md", payload)
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    imported = service.import_okf(root, actor="fixture-importer")
+    legacy_id = "legacy:" + hashlib.sha256(payload).hexdigest()
+    hidden_bind = service.bind_legacy(
+        legacy_id,
+        {"quotes": [{"quote": body}]},
+        actor="fixture-importer",
+        reason="must remain hidden",
+    )
+
+    assert imported.missing_session == 1
+    assert imported.imported == 1
+    assert production_store.conn.execute(
+        "SELECT source_session_id FROM context_concepts WHERE id=?",
+        (legacy_id,),
+    ).fetchone() == (None,)
+    assert {error.code for error in hidden_bind.errors} == {"concept_unavailable"}
+    assert hidden_bind.writes == 0
+
+
+def test_unavailable_legacy_root_binds_after_claimed_session_is_ingested(
+    production_store: ProductionStore,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "okf-late-session-bind"
+    root.mkdir()
+    session_id = "late-session"
+    body = "Exact evidence ingested after its legacy root."
+    payload = _okf_bytes(title="Late session root", body=body, session_id=session_id)
+    _write(root, "late.md", payload)
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+
+    imported = service.import_okf(root, actor="fixture-importer")
+    legacy_id = "legacy:" + hashlib.sha256(payload).hexdigest()
+    unavailable = service.bind_legacy(
+        legacy_id,
+        {"quotes": [{"quote": body}]},
+        actor="fixture-importer",
+        reason="session is not yet ingested",
+    )
+
+    assert imported.missing_session == 1
+    assert imported.imported == 1
+    assert production_store.conn.execute(
+        "SELECT source_session_id FROM context_concepts WHERE id=?",
+        (legacy_id,),
+    ).fetchone() == (None,)
+    assert {error.code for error in unavailable.errors} == {"concept_unavailable"}
+
+    production_store.conn.execute(
+        """INSERT INTO sessions(
+           id,source,project_path,git_branch,created_at,updated_at,metadata)
+           SELECT ?,source,project_path,git_branch,created_at,updated_at,metadata
+           FROM sessions WHERE id='fixture-session-1'""",
+        (session_id,),
+    )
+    production_store.conn.commit()
+    _capture(
+        production_store,
+        body,
+        session_id=session_id,
+        key="late-session-evidence",
+    )
+    bound = service.bind_legacy(
+        legacy_id,
+        {"quotes": [{"quote": body}]},
+        actor="fixture-importer",
+        reason="claimed session is now visible",
+    )
+
+    assert bound.writes == 4
+    assert bound.concept_id is not None
+    assert production_store.conn.execute(
+        """SELECT source_session_id,source_uri,supersedes_concept_id
+           FROM context_concepts WHERE id=?""",
+        (bound.concept_id,),
+    ).fetchone() == (
+        session_id,
+        f"sessionweaver://session/{session_id}",
+        legacy_id,
+    )
+    assert production_store.conn.execute("PRAGMA foreign_key_check").fetchall() == []

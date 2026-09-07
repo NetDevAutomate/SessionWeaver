@@ -16,7 +16,15 @@ from agent_session_tools.context.public import AgentContext, open_context
 from agent_session_tools.context.scope import ScopeError, visibility_sql
 
 from .concept_schema import _MAX_COUNTER, _ensure_schema
-from .okf import MAX_ERROR_ENTRIES, ImportReport, _OKFRecord, _scan_okf
+from .okf import (
+    _SESSION_ID,
+    _SESSION_URI_PREFIX,
+    MAX_ERROR_ENTRIES,
+    ImportReport,
+    _OKFRecord,
+    _OKFScan,
+    _scan_okf,
+)
 from .okf import ImportError as OKFImportError
 from .winddown import (
     _Concept,
@@ -372,7 +380,7 @@ class _ConceptRepository:
         statement: str,
         tags: Sequence[str],
         confidence: float,
-        source_session_id: str,
+        source_session_id: str | None,
         source_uri: str,
         producer: str,
         event_actor: str | None = None,
@@ -462,10 +470,40 @@ class _ConceptRepository:
         if binding_state == "bound":
             if assertion_id is None or context._assertion(assertion_id) is None:
                 return None
-        elif not self._session_visible(context, source_session_id):
+        elif source_session_id is None or not self._session_visible(context, source_session_id):
             return None
         rows = _rows(self.conn, "SELECT * FROM context_concepts WHERE id=?", (concept_id,))
         return rows[0] if rows else None
+
+    def authorized_legacy_for_bind(
+        self,
+        context: AgentContext,
+        concept_id: str,
+    ) -> tuple[dict[str, Any], str] | None:
+        """Return an unbound root only after its claimed session is scope-visible."""
+        rows = _rows(
+            self.conn,
+            """SELECT * FROM context_concepts
+               WHERE id=? AND binding_state='legacy-unbound'""",
+            (concept_id,),
+        )
+        if not rows:
+            return None
+        root = rows[0]
+        source_session_id = root["source_session_id"]
+        if source_session_id is None:
+            source_uri = root["source_uri"]
+            if not isinstance(source_uri, str) or not source_uri.startswith(_SESSION_URI_PREFIX):
+                return None
+            claimed_id = source_uri.removeprefix(_SESSION_URI_PREFIX)
+            if _SESSION_ID.fullmatch(claimed_id) is None:
+                return None
+            source_session_id = claimed_id
+        if not isinstance(source_session_id, str) or not self._session_visible(
+            context, source_session_id
+        ):
+            return None
+        return root, source_session_id
 
     def search_fts(self, query: str) -> list[dict[str, Any]]:
         """Private A3a read-model proof; A4 owns the public recall surface."""
@@ -712,6 +750,7 @@ class ConceptService:
         root: dict[str, Any],
         current: dict[str, Any],
         citations: Sequence[dict[str, object]],
+        source_session_id: str,
         actor: str,
         reason: str,
     ) -> BindResult:
@@ -734,7 +773,7 @@ class ConceptService:
             statement=cast(str, root["statement"]),
             tags=tuple(json.loads(cast(str, root["canonical_tags"]))),
             confidence=float(root["confidence"]),
-            source_session_id=cast(str, root["source_session_id"]),
+            source_session_id=source_session_id,
             source_uri=cast(str, root["source_uri"]),
             producer=cast(str, root["producer"]),
             legacy_file_sha256=cast(str, root["legacy_file_sha256"]),
@@ -782,20 +821,8 @@ class ConceptService:
         with open_context(self._db, write=True, project=project) as context:
             _ensure_schema(context.conn)
             repository = _ConceptRepository(context.conn, now=self._now)
-            root = repository.authorized_root(context, concept_id)
-            if root is None:
-                return BindResult(
-                    writes=0,
-                    legacy_concept_id=concept_id,
-                    errors=(
-                        _error(
-                            "/concept_id",
-                            "concept_unavailable",
-                            "Concept is unavailable under the requested scope",
-                        ),
-                    ),
-                )
-            if root["binding_state"] != "legacy-unbound":
+            visible_root = repository.authorized_root(context, concept_id)
+            if visible_root is not None and visible_root["binding_state"] != "legacy-unbound":
                 return BindResult(
                     writes=0,
                     legacy_concept_id=concept_id,
@@ -807,6 +834,20 @@ class ConceptService:
                         ),
                     ),
                 )
+            authorized = repository.authorized_legacy_for_bind(context, concept_id)
+            if authorized is None:
+                return BindResult(
+                    writes=0,
+                    legacy_concept_id=concept_id,
+                    errors=(
+                        _error(
+                            "/concept_id",
+                            "concept_unavailable",
+                            "Concept is unavailable under the requested scope",
+                        ),
+                    ),
+                )
+            root, binding_session_id = authorized
             current = repository.current_event(concept_id)
             if current["standing"] == "retired":
                 return BindResult(
@@ -820,7 +861,7 @@ class ConceptService:
                         ),
                     ),
                 )
-            resolver = _EvidenceResolver(context, cast(str, root["source_session_id"]))
+            resolver = _EvidenceResolver(context, binding_session_id)
             citations, resolution_issues = resolver.resolve(quotes, path="/quotes")
             if resolution_issues:
                 return BindResult(
@@ -834,6 +875,7 @@ class ConceptService:
                 root=root,
                 current=current,
                 citations=citations,
+                source_session_id=binding_session_id,
                 actor=actor,
                 reason=reason,
             )
@@ -847,35 +889,41 @@ class ConceptService:
         dry_run: bool = False,
     ) -> ImportReport:
         """Import valid OKF roots atomically after complete parse and resolution."""
-        scan = _scan_okf(root)
-        base_values: dict[str, int] = {
-            name: cast(int, value)
-            for name, value in scan.report.to_dict().items()
-            if name != "errors"
-        }
+
+        def operation_report(*issues: _Issue) -> ImportReport:
+            return ImportReport(
+                errors=tuple(OKFImportError("", issue.code, issue.path) for issue in issues)
+            )
 
         def build_report(
+            scan: _OKFScan,
             updates: dict[str, int] | None = None,
             *,
             errors: tuple[OKFImportError, ...] | None = None,
         ) -> ImportReport:
+            base_values: dict[str, int] = {
+                name: cast(int, value)
+                for name, value in scan.report.to_dict().items()
+                if name != "errors"
+            }
             values = {**base_values, **(updates or {})}
             return ImportReport(
                 **values,
                 errors=scan.report.errors if errors is None else errors,
             )
 
+        call_issues: list[_Issue] = []
         actor_issue = _call_text(actor, "/actor", 128)
         if actor_issue is not None:
-            return build_report(
-                errors=(
-                    *scan.report.errors[: MAX_ERROR_ENTRIES - 1],
-                    OKFImportError("", actor_issue.code, actor_issue.path),
-                )
-            )
-        if not scan.records:
-            return scan.report
+            call_issues.append(actor_issue)
+        if project is not None:
+            project_issue = _call_text(project, "/project", 128)
+            if project_issue is not None:
+                call_issues.append(project_issue)
+        if call_issues:
+            return operation_report(*call_issues)
 
+        scan: _OKFScan | None = None
         counters = {
             "already_present": 0,
             "bound": 0,
@@ -885,19 +933,22 @@ class ConceptService:
             "no_exact_match": 0,
             "ambiguous_match": 0,
         }
-        plans: list[tuple[_OKFRecord, tuple[dict[str, object], ...] | None]] = []
+        plans: list[tuple[_OKFRecord, tuple[dict[str, object], ...] | None, str | None]] = []
         imported = 0
         writes = 0
         try:
             with open_context(self._db, write=not dry_run, project=project) as context:
-                if not dry_run:
-                    _ensure_schema(context.conn)
+                scan = _scan_okf(root)
+                if not scan.records:
+                    return scan.report
+
                 has_sidecar = (
                     context.conn.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='context_concepts'"
                     ).fetchone()
                     is not None
                 )
+                repository = _ConceptRepository(context.conn, now=self._now)
                 for record in scan.records:
                     if (
                         has_sidecar
@@ -910,57 +961,57 @@ class ConceptService:
                     ):
                         counters["already_present"] += 1
                         continue
-                    resolver = _EvidenceResolver(context, record.session_id)
+
                     citations: tuple[dict[str, object], ...] | None = None
-                    if (
-                        context.conn.execute(
-                            "SELECT 1 FROM sessions WHERE id=?", (record.session_id,)
-                        ).fetchone()
-                        is None
-                    ):
+                    source_session_id: str | None
+                    if not repository._session_visible(context, record.session_id):
                         reason = "missing_session"
-                    elif len(record.statement) > 2000:
-                        reason = "no_exact_match"
+                        source_session_id = None
                     else:
-                        sources = resolver._visible_sources()
-                        if not sources:
-                            reason = "no_visible_evidence"
+                        source_session_id = record.session_id
+                        resolver = _EvidenceResolver(context, record.session_id)
+                        if len(record.statement) > 2000:
+                            reason = "no_exact_match"
                         else:
-                            matches = [
-                                (
-                                    identity,
-                                    start,
-                                    start + len(record.statement),
-                                    record.statement,
-                                )
-                                for identity, body in sources.items()
-                                for start in resolver._occurrences(body, record.statement)
-                            ]
-                            if not matches:
-                                reason = "no_exact_match"
-                            elif len(matches) > 1:
-                                reason = "ambiguous_match"
+                            sources = resolver._visible_sources()
+                            if not sources:
+                                reason = "no_visible_evidence"
                             else:
-                                reason = "bound"
-                                match = matches[0]
-                                citations = (
-                                    {
-                                        "evidence_id": match[0],
-                                        "start": match[1],
-                                        "end": match[2],
-                                        "quote": match[3],
-                                    },
-                                )
+                                matches = [
+                                    (
+                                        identity,
+                                        start,
+                                        start + len(record.statement),
+                                        record.statement,
+                                    )
+                                    for identity, body in sources.items()
+                                    for start in resolver._occurrences(body, record.statement)
+                                ]
+                                if not matches:
+                                    reason = "no_exact_match"
+                                elif len(matches) > 1:
+                                    reason = "ambiguous_match"
+                                else:
+                                    reason = "bound"
+                                    match = matches[0]
+                                    citations = (
+                                        {
+                                            "evidence_id": match[0],
+                                            "start": match[1],
+                                            "end": match[2],
+                                            "quote": match[3],
+                                        },
+                                    )
                     counters[reason] += 1
                     if reason != "bound":
                         counters["legacy_unbound"] += 1
-                    plans.append((record, citations))
+                    plans.append((record, citations, source_session_id))
 
                 if dry_run:
-                    return build_report(counters)
+                    return build_report(scan, counters)
 
-                repository = _ConceptRepository(context.conn, now=self._now)
-                for record, citations in plans:
+                _ensure_schema(context.conn)
+                for record, citations, source_session_id in plans:
                     repository.seed_legacy(
                         original_bytes=record.original_bytes,
                         kind=record.kind,
@@ -968,7 +1019,7 @@ class ConceptService:
                         statement=record.statement,
                         tags=record.tags,
                         confidence=record.confidence,
-                        source_session_id=record.session_id,
+                        source_session_id=source_session_id,
                         source_uri=record.source_uri,
                         producer=record.actor,
                         event_actor=actor,
@@ -976,6 +1027,8 @@ class ConceptService:
                     imported += 1
                     writes += 1
                     if citations is not None:
+                        if source_session_id is None:
+                            raise RuntimeError("Bound import lost its authorized session")
                         legacy_root = repository.authorized_root(context, record.legacy_id)
                         if legacy_root is None:
                             raise RuntimeError("Imported legacy root is unavailable")
@@ -986,24 +1039,22 @@ class ConceptService:
                             root=legacy_root,
                             current=current,
                             citations=citations,
+                            source_session_id=source_session_id,
                             actor=actor,
                             reason="legacy OKF exact-body binding",
                         )
                         writes += bound_result.writes
-            return build_report({**counters, "imported": imported, "writes": writes})
+                return build_report(scan, {**counters, "imported": imported, "writes": writes})
         except ScopeError:
             code = "project_unavailable" if project is not None else "scope_unavailable"
             field = "/project" if project is not None else "/scope"
-            return build_report(
-                counters,
-                errors=(
-                    *scan.report.errors[: MAX_ERROR_ENTRIES - 1],
-                    OKFImportError("", code, field),
-                ),
-            )
+            return ImportReport(errors=(OKFImportError("", code, field),))
         except Exception:
+            if scan is None:
+                raise
             failure_count = len(plans) or len(scan.records) or 1
             return build_report(
+                scan,
                 {
                     **counters,
                     "imported": 0,

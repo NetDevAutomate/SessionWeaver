@@ -16,6 +16,8 @@ import yaml
 from yaml.nodes import MappingNode
 from yaml.tokens import AliasToken, AnchorToken, TagToken
 
+from .safe_fs import _DIRECTORY_OPEN_FLAGS, _FILE_READ_FLAGS, _open_directory_nofollow
+
 MAX_OKF_BYTES: Final = 64 * 1024
 MAX_ERROR_ENTRIES: Final = 100
 
@@ -107,6 +109,7 @@ class _OKFRecord:
     description: str
     statement: str
     tags: tuple[str, ...]
+    normalized_tag_indexes: tuple[int, ...]
     confidence: float
     session_id: str
     source_uri: str
@@ -190,12 +193,14 @@ class _Counters:
         return ImportReport(**asdict(self), errors=tuple(errors))
 
 
-def _byte_key(path: Path, root: Path) -> bytes:
-    return path.relative_to(root).as_posix().encode("utf-8", "surrogateescape")
+@dataclass(frozen=True)
+class _SourceCandidate:
+    relative_path: str
+    unsafe: bool = False
 
 
-def _relative(path: Path, root: Path) -> str:
-    return path.relative_to(root).as_posix()
+def _byte_key(relative_path: str) -> bytes:
+    return relative_path.encode("utf-8", "surrogateescape")
 
 
 def _append_error(
@@ -209,38 +214,61 @@ def _append_error(
         errors.append(ImportError(relative_path=relative_path, code=code, field=field))
 
 
-def _candidate_paths(root: Path) -> list[Path]:
-    markdown = set(root.rglob("*.md"))
-    unsafe_links = {
-        path
-        for path in root.rglob("*")
-        if path.is_symlink() and (path.suffix == ".md" or path.is_dir())
-    }
-    return sorted(markdown | unsafe_links, key=lambda path: _byte_key(path, root))
+def _candidate_paths(root_descriptor: int) -> list[_SourceCandidate]:
+    candidates: list[_SourceCandidate] = []
+
+    def walk(descriptor: int, prefix: str) -> None:
+        try:
+            names = os.listdir(descriptor)
+        except OSError:
+            if prefix:
+                candidates.append(_SourceCandidate(prefix, unsafe=True))
+            return
+        for name in sorted(names, key=lambda value: value.encode("utf-8", "surrogateescape")):
+            relative_path = f"{prefix}/{name}" if prefix else name
+            try:
+                metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            except OSError:
+                if name.endswith(".md"):
+                    candidates.append(_SourceCandidate(relative_path, unsafe=True))
+                continue
+            mode = metadata.st_mode
+            if stat.S_ISLNK(mode):
+                candidates.append(_SourceCandidate(relative_path, unsafe=True))
+            elif stat.S_ISDIR(mode):
+                try:
+                    child = os.open(name, _DIRECTORY_OPEN_FLAGS, dir_fd=descriptor)
+                except OSError:
+                    candidates.append(_SourceCandidate(relative_path, unsafe=True))
+                    continue
+                try:
+                    walk(child, relative_path)
+                finally:
+                    os.close(child)
+            elif name.endswith(".md"):
+                candidates.append(_SourceCandidate(relative_path, unsafe=not stat.S_ISREG(mode)))
+
+    walk(root_descriptor, "")
+    return sorted(candidates, key=lambda candidate: _byte_key(candidate.relative_path))
 
 
-def _is_contained_regular(path: Path, root: Path, resolved_root: Path) -> bool:
-    if path.is_symlink():
-        return False
-    current = path.parent
-    while current != root:
-        if current.is_symlink():
-            return False
-        if current == current.parent:
-            return False
-        current = current.parent
+def _read_bounded(
+    root_descriptor: int,
+    relative_path: str,
+) -> tuple[bytes | None, str | None]:
+    parts = relative_path.split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        return None, "unsafe_path"
     try:
-        resolved = path.resolve(strict=True)
-        resolved.relative_to(resolved_root)
-        return stat.S_ISREG(path.stat(follow_symlinks=False).st_mode)
-    except (FileNotFoundError, OSError, ValueError):
-        return False
-
-
-def _read_bounded(path: Path) -> tuple[bytes | None, str | None]:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
+        parent = os.dup(root_descriptor)
+        try:
+            for component in parts[:-1]:
+                child = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            descriptor = os.open(parts[-1], _FILE_READ_FLAGS, dir_fd=parent)
+        finally:
+            os.close(parent)
     except OSError:
         return None, "unsafe_path"
     try:
@@ -354,6 +382,7 @@ def _schema_record(
 
     raw_tags = value.get("tags")
     tags: tuple[str, ...] = ()
+    normalized_tag_indexes: tuple[int, ...] = ()
     if not isinstance(raw_tags, list):
         issues.append(("invalid_type", "/tags"))
     elif not 2 <= len(raw_tags) <= 5:
@@ -361,17 +390,23 @@ def _schema_record(
     else:
         seen_tags: set[str] = set()
         parsed_tags: list[str] = []
+        normalized_indexes: list[int] = []
         for index, tag in enumerate(raw_tags):
             if not isinstance(tag, str):
                 issues.append(("invalid_type", f"/tags/{index}"))
-            elif not _TAG.fullmatch(tag):
+                continue
+            canonical_tag = tag.lower()
+            if not _TAG.fullmatch(canonical_tag):
                 issues.append(("invalid_format", f"/tags/{index}"))
-            elif tag in seen_tags:
+            elif canonical_tag in seen_tags:
                 issues.append(("duplicate_item", f"/tags/{index}"))
             else:
-                seen_tags.add(tag)
-                parsed_tags.append(tag)
+                seen_tags.add(canonical_tag)
+                parsed_tags.append(canonical_tag)
+                if canonical_tag != tag:
+                    normalized_indexes.append(index)
         tags = tuple(sorted(parsed_tags))
+        normalized_tag_indexes = tuple(normalized_indexes)
 
     raw_confidence = value.get("confidence")
     confidence: float | None = None
@@ -451,6 +486,7 @@ def _schema_record(
             description=cast(str, description),
             statement=body,
             tags=tags,
+            normalized_tag_indexes=normalized_tag_indexes,
             confidence=cast(float, confidence),
             session_id=cast(str, session_id),
             source_uri=cast(str, source_uri),
@@ -461,22 +497,17 @@ def _schema_record(
     )
 
 
-def _scan_okf(root: Path) -> _OKFScan:
-    """Parse and classify an OKF tree without opening any database."""
-    if root.is_symlink() or not root.is_dir():
-        raise ValueError("OKF root must be a non-symlink directory")
-    root = root.absolute()
-    resolved_root = root.resolve(strict=True)
+def _scan_open_okf(root_descriptor: int) -> _OKFScan:
     counters = _Counters()
     errors: list[ImportError] = []
     records: list[_OKFRecord] = []
     seen_ids: set[str] = set()
     seen_content: set[str] = set()
 
-    for path in _candidate_paths(root):
+    for candidate in _candidate_paths(root_descriptor):
         counters.scanned += 1
-        relative_path = _relative(path, root)
-        if not _is_contained_regular(path, root, resolved_root):
+        relative_path = candidate.relative_path
+        if candidate.unsafe:
             counters.unsafe_path += 1
             _append_error(
                 errors,
@@ -485,7 +516,7 @@ def _scan_okf(root: Path) -> _OKFScan:
                 field="/",
             )
             continue
-        original_bytes, read_error = _read_bounded(path)
+        original_bytes, read_error = _read_bounded(root_descriptor, relative_path)
         if read_error is not None or original_bytes is None:
             if read_error == "unsafe_path":
                 counters.unsafe_path += 1
@@ -553,6 +584,13 @@ def _scan_okf(root: Path) -> _OKFScan:
                 )
             continue
         counters.parsed += 1
+        for index in record.normalized_tag_indexes:
+            _append_error(
+                errors,
+                relative_path=relative_path,
+                code="normalized_tag",
+                field=f"/tags/{index}",
+            )
         content_fingerprint = record.content_fingerprint()
         if record.legacy_id in seen_ids or content_fingerprint in seen_content:
             counters.duplicate_content += 1
@@ -568,3 +606,15 @@ def _scan_okf(root: Path) -> _OKFScan:
         records.append(record)
 
     return _OKFScan(records=tuple(records), report=counters.report(errors))
+
+
+def _scan_okf(root: Path) -> _OKFScan:
+    """Parse an OKF tree through descriptors without opening any database."""
+    try:
+        root_descriptor = _open_directory_nofollow(root.expanduser())
+    except OSError as exc:
+        raise ValueError("OKF root must be a non-symlink directory") from exc
+    try:
+        return _scan_open_okf(root_descriptor)
+    finally:
+        os.close(root_descriptor)
