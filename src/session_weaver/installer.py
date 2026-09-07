@@ -7,11 +7,12 @@ Semantics (deliberately conservative):
 - Each selected harness that does NOT already read the hub gets a symlink
   ``<harness skills dir>/session-weaver -> <hub>/session-weaver``.
 - Idempotent: a correct existing symlink is reported as unchanged; a wrong
-  symlink is repointed. A REAL directory or file already occupying the target
-  is never deleted — the action is reported as a conflict for the human.
-- ``copy`` mode duplicates the skill directory into the harness's native
-  skills directory instead of symlinking (for setups where symlinks are
-  unwanted); hub-reader harnesses are still served by the hub.
+  symlink is repointed. By default, a real directory, file, or symlink already
+  occupying a copy target is never deleted — it is a conflict. Explicit
+  ``force`` in copy mode may replace only that named target.
+- ``copy`` mode duplicates the skill directory into native directories for
+  harnesses that do not read the hub. Each copy carries a deterministic
+  ownership marker; uninstall removes it only when that marker is valid.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from pathlib import Path
 from .harnesses import Harness, hub_dir
 
 SKILL_NAME = "session-weaver"
+OWNERSHIP_MARKER = ".session-weaver-owned.json"
+OWNERSHIP_MARKER_BYTES = b'{"owner":"session-weaver","schema":1}\n'
 
 
 def packaged_skill_dir() -> Path:
@@ -70,17 +73,42 @@ def _install_tree(source: Path, dest: Path, *, dry_run: bool) -> None:
             tmp.replace(target)
 
 
+def _remove_install_target(target: Path) -> None:
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+
+
+def _is_owned_copy(target: Path) -> bool:
+    marker = target / OWNERSHIP_MARKER
+    try:
+        return not marker.is_symlink() and marker.read_bytes() == OWNERSHIP_MARKER_BYTES
+    except OSError:
+        return False
+
+
+def _is_hub_link(target: Path, hub_skill: Path) -> bool:
+    try:
+        return target.resolve() == hub_skill.resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
 def install_skill(
     harnesses: list[Harness],
     *,
     skill_source: Path | None = None,
     home: Path | None = None,
     mode: str = "symlink",
+    force: bool = False,
     dry_run: bool = False,
 ) -> Report:
     """Install the skill into the hub and wire the selected harnesses to it."""
     if mode not in ("symlink", "copy"):
         raise ValueError("mode must be 'symlink' or 'copy'")
+    if force and mode != "copy":
+        raise ValueError("force requires copy mode")
     source = skill_source or packaged_skill_dir()
     if not (source / "SKILL.md").is_file():
         raise FileNotFoundError(f"skill source has no SKILL.md: {source}")
@@ -92,15 +120,30 @@ def install_skill(
 
     for harness in harnesses:
         target = harness.resolved_skills_dir(home) / SKILL_NAME
-        if harness.reads_hub and mode == "symlink":
+        if harness.reads_hub:
             report.add("skip", target, f"{harness.name} already reads {hub_dir(home)}")
             continue
         if mode == "copy":
-            if target.is_symlink():
-                report.add("conflict", target, "symlink present; remove it before copy mode")
+            target_exists = target.is_symlink() or target.exists()
+            if target_exists and not force:
+                detail = (
+                    "symlink present; remove it before copy mode or use --force"
+                    if target.is_symlink()
+                    else "target exists; use --force with copy mode to replace it"
+                )
+                report.add("conflict", target, detail)
                 continue
+            if target_exists and not dry_run:
+                _remove_install_target(target)
             _install_tree(source, target, dry_run=dry_run)
-            report.add("copy", target, f"copied for {harness.name}")
+            if not dry_run:
+                (target / OWNERSHIP_MARKER).write_bytes(OWNERSHIP_MARKER_BYTES)
+            detail = (
+                f"replaced existing target for {harness.name}"
+                if target_exists
+                else f"copied for {harness.name}"
+            )
+            report.add("copy", target, detail)
             continue
         # symlink mode
         if target.is_symlink():
@@ -130,19 +173,35 @@ def uninstall_skill(
     remove_hub: bool = False,
     dry_run: bool = False,
 ) -> Report:
-    """Remove harness links (and optionally the hub copy). Copies are removed too."""
+    """Remove recognized hub links and ownership-marked copies."""
     report = Report()
     hub_skill = hub_dir(home) / SKILL_NAME
     for harness in harnesses:
         target = harness.resolved_skills_dir(home) / SKILL_NAME
         if target.is_symlink():
+            if not _is_hub_link(target, hub_skill):
+                report.add(
+                    "conflict",
+                    target,
+                    "symlink is unowned; expected a link to the SessionWeaver hub",
+                )
+                continue
             if not dry_run:
                 target.unlink()
             report.add("link", target, "symlink removed")
         elif target.is_dir():
+            if not _is_owned_copy(target):
+                report.add(
+                    "conflict",
+                    target,
+                    "directory is unowned; valid SessionWeaver marker required",
+                )
+                continue
             if not dry_run:
                 shutil.rmtree(target)
             report.add("copy", target, "copied skill removed")
+        elif target.exists():
+            report.add("conflict", target, "plain file is unowned; not touching it")
         else:
             report.add("skip", target, "nothing installed")
     if remove_hub and hub_skill.is_dir():

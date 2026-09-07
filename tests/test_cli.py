@@ -51,6 +51,49 @@ def test_conflict_exits_nonzero(fake_home, capsys):
     assert "conflict" in capsys.readouterr().out
 
 
+def test_copy_conflict_exits_nonzero_without_changing_existing_file(fake_home, capsys):
+    occupied = fake_home / ".kiro/skills" / SKILL_NAME
+    occupied.mkdir(parents=True)
+    sentinel = occupied / "SKILL.md"
+    sentinel.write_bytes(b"user-owned skill\x00\xff")
+
+    assert main(["install", "--harness", "kiro", "--copy"]) == 1
+    assert "conflict" in capsys.readouterr().out
+    assert sentinel.read_bytes() == b"user-owned skill\x00\xff"
+
+
+def test_copy_force_replaces_named_target_and_reports_outcome(fake_home, capsys):
+    occupied = fake_home / ".kiro/skills" / SKILL_NAME
+    occupied.mkdir(parents=True)
+    sentinel = occupied / "SKILL.md"
+    sentinel.write_bytes(b"replace me")
+    extra = occupied / "user-only.txt"
+    extra.write_bytes(b"remove with forced target")
+    sibling = occupied.parent / "keep-me.txt"
+    sibling.write_bytes(b"outside named target")
+
+    assert main(["install", "--harness", "kiro", "--copy", "--force"]) == 0
+    assert "replaced existing target for kiro" in capsys.readouterr().out
+    assert sentinel.read_bytes() != b"replace me"
+    assert not extra.exists()
+    assert sibling.read_bytes() == b"outside named target"
+
+
+def test_force_without_copy_is_a_usage_error(fake_home, capsys):
+    assert main(["install", "--harness", "kiro", "--force"]) == 2
+    assert "--force requires --copy" in capsys.readouterr().err
+
+
+def test_uninstall_plain_file_is_a_visible_conflict(fake_home, capsys):
+    target = fake_home / ".kiro/skills" / SKILL_NAME
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"user-owned plain file\x00\xff")
+
+    assert main(["uninstall", "--harness", "kiro"]) == 1
+    assert "conflict" in capsys.readouterr().out
+    assert target.read_bytes() == b"user-owned plain file\x00\xff"
+
+
 def test_console_script_shape_is_importable_and_runs():
     """The installed-entry-point path: python -m equivalent smoke."""
     code = "from session_weaver.cli import main; raise SystemExit(main(['--version']))"

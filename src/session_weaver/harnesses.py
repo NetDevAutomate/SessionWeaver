@@ -29,9 +29,8 @@ class Harness:
 
     ``skills_dir`` is the harness's native skills directory relative to home.
     ``reads_hub`` means the harness already searches the hub directly, so a
-    symlink from its native directory would only create a duplicate discovery
-    path — the installer skips it (and says so) unless the skill is installed
-    with ``copy`` mode to an explicit directory.
+    symlink or copy in its native directory would only create a duplicate
+    discovery path — the installer always skips it (and says so).
     """
 
     name: str

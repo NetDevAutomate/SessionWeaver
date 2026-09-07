@@ -55,6 +55,16 @@ def test_hub_readers_are_skipped_not_linked(skill_source, home):
         assert not (harness.resolved_skills_dir(home) / SKILL_NAME).exists()
 
 
+def test_hub_readers_are_also_skipped_in_copy_mode(skill_source, home):
+    readers = [h for h in HARNESSES.values() if h.reads_hub]
+
+    report = install_skill(readers, skill_source=skill_source, home=home, mode="copy")
+
+    assert [action.kind for action in report.actions].count("skip") == len(readers)
+    for harness in readers:
+        assert not (harness.resolved_skills_dir(home) / SKILL_NAME).exists()
+
+
 def test_install_is_idempotent(skill_source, home):
     install_skill(linkers(), skill_source=skill_source, home=home)
     second = install_skill(linkers(), skill_source=skill_source, home=home)
@@ -101,6 +111,67 @@ def test_copy_mode_duplicates_instead_of_linking(skill_source, home):
     assert not report.conflicts
 
 
+def test_copy_mode_writes_stable_ownership_marker(skill_source, home):
+    harness = linkers()[0]
+
+    install_skill([harness], skill_source=skill_source, home=home, mode="copy")
+
+    marker = harness.resolved_skills_dir(home) / SKILL_NAME / ".session-weaver-owned.json"
+    assert marker.read_bytes() == b'{"owner":"session-weaver","schema":1}\n'
+
+
+def test_copy_mode_conflict_preserves_every_pre_existing_byte(skill_source, home):
+    harness = linkers()[0]
+    target = harness.resolved_skills_dir(home) / SKILL_NAME
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_bytes(b"user-owned skill\x00\xff")
+    nested = target / "nested"
+    nested.mkdir()
+    (nested / "settings.json").write_bytes(b'{"owner":"user"}\n')
+    before = {
+        path.relative_to(target): path.read_bytes() for path in target.rglob("*") if path.is_file()
+    }
+
+    report = install_skill([harness], skill_source=skill_source, home=home, mode="copy")
+
+    after = {
+        path.relative_to(target): path.read_bytes() for path in target.rglob("*") if path.is_file()
+    }
+    assert len(report.conflicts) == 1
+    assert after == before
+
+
+def test_copy_mode_force_replaces_only_the_named_target(skill_source, home):
+    harness = linkers()[0]
+    target = harness.resolved_skills_dir(home) / SKILL_NAME
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_bytes(b"replace me")
+    (target / "user-only.txt").write_bytes(b"remove with forced target")
+    sibling = target.parent / "keep-me.txt"
+    sibling.write_bytes(b"outside named target")
+
+    report = install_skill(
+        [harness],
+        skill_source=skill_source,
+        home=home,
+        mode="copy",
+        force=True,
+    )
+
+    assert (target / "SKILL.md").read_text().endswith("test skill\n")
+    assert not (target / "user-only.txt").exists()
+    assert sibling.read_bytes() == b"outside named target"
+    assert any(
+        action.kind == "copy" and action.detail == f"replaced existing target for {harness.name}"
+        for action in report.actions
+    )
+
+
+def test_force_requires_copy_mode(skill_source, home):
+    with pytest.raises(ValueError, match="force requires copy mode"):
+        install_skill(linkers(), skill_source=skill_source, home=home, force=True)
+
+
 def test_dry_run_changes_nothing(skill_source, home):
     report = install_skill(linkers(), skill_source=skill_source, home=home, dry_run=True)
 
@@ -116,6 +187,35 @@ def test_uninstall_removes_links_and_optionally_hub(skill_source, home):
     assert not (hub_dir(home) / SKILL_NAME).exists()
     for harness in linkers():
         assert not (harness.resolved_skills_dir(home) / SKILL_NAME).exists()
+
+
+def test_uninstall_preserves_symlink_not_pointing_to_sessionweaver_hub(home):
+    harness = linkers()[0]
+    elsewhere = home / "user-managed-skill"
+    elsewhere.mkdir(parents=True)
+    target = harness.resolved_skills_dir(home) / SKILL_NAME
+    target.parent.mkdir(parents=True)
+    target.symlink_to(elsewhere)
+    original_link = target.readlink()
+
+    report = uninstall_skill([harness], home=home)
+
+    assert len(report.conflicts) == 1
+    assert target.is_symlink()
+    assert target.readlink() == original_link
+
+
+def test_uninstall_reports_plain_file_as_unowned_and_preserves_bytes(home):
+    harness = linkers()[0]
+    target = harness.resolved_skills_dir(home) / SKILL_NAME
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"user-owned plain file\x00\xff")
+
+    report = uninstall_skill([harness], home=home)
+
+    assert len(report.conflicts) == 1
+    assert "plain file is unowned" in report.conflicts[0].detail
+    assert target.read_bytes() == b"user-owned plain file\x00\xff"
 
 
 def test_status_reports_hub_and_links(skill_source, home):
@@ -135,6 +235,34 @@ def test_copy_mode_over_existing_symlink_is_a_conflict(skill_source, home):
 
     assert len(report.conflicts) == 1
     assert "remove it before copy mode" in report.conflicts[0].detail
+
+
+@pytest.mark.parametrize(
+    "marker_bytes",
+    [None, b'{"owner":"someone-else","schema":1}\n'],
+    ids=["missing-marker", "invalid-marker"],
+)
+def test_uninstall_preserves_directory_without_valid_ownership_marker(
+    home,
+    marker_bytes,
+):
+    harness = linkers()[0]
+    target = harness.resolved_skills_dir(home) / SKILL_NAME
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_bytes(b"user-owned skill")
+    if marker_bytes is not None:
+        (target / ".session-weaver-owned.json").write_bytes(marker_bytes)
+    before = {
+        path.relative_to(target): path.read_bytes() for path in target.rglob("*") if path.is_file()
+    }
+
+    report = uninstall_skill([harness], home=home)
+
+    after = {
+        path.relative_to(target): path.read_bytes() for path in target.rglob("*") if path.is_file()
+    }
+    assert len(report.conflicts) == 1
+    assert after == before
 
 
 def test_uninstall_removes_copied_directory(skill_source, home):

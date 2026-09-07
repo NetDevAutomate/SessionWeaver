@@ -38,16 +38,22 @@ session tools `session-export`, `session-query`, `session-context`, `session-syn
 ```bash
 session-weaver install                  # all six harnesses
 session-weaver install --harness kiro,claude
-session-weaver install --dry-run        # show what would happen
-session-weaver status                   # inspect current wiring
-session-weaver doctor                   # check the session store + tools
+session-weaver install --copy             # copies only for non-hub readers
+session-weaver install --copy --force     # replace each named copy target explicitly
+session-weaver install --dry-run          # show what would happen
+session-weaver status                     # inspect current wiring
+session-weaver doctor                     # check the session store + tools
 ```
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a
 symlink from their own skills directory into the hub — two links in a chain instead of
-six drifting copies. `--copy` duplicates instead of symlinking if your setup dislikes
-links; a real directory already in the way is reported as a conflict and never deleted.
+six drifting copies. `--copy` duplicates into only the non-hub-reading harnesses if your
+setup dislikes links. An existing named target is a non-destructive conflict unless
+`--force` is explicit; force replaces that target only. Installer-created copies carry
+`.session-weaver-owned.json` containing `{"owner":"session-weaver","schema":1}`.
+Uninstall removes a copied directory only when that exact marker proves ownership, and
+removes a symlink only when it resolves to the SessionWeaver hub.
 
 ## What the system does
 

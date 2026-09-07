@@ -39,7 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument(
         "--copy",
         action="store_true",
-        help="copy the skill into each harness directory instead of symlinking to the hub",
+        help="copy into each selected non-hub-reading harness instead of symlinking",
+    )
+    p_install.add_argument(
+        "--force",
+        action="store_true",
+        help="with --copy, replace only an existing named harness target",
     )
     p_install.add_argument("--dry-run", action="store_true", help="report without changing files")
 
@@ -105,9 +110,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.command == "install":
+        if args.force and not args.copy:
+            print("error: --force requires --copy", file=sys.stderr)
+            return 2
         report = install_skill(
             harnesses,
             mode="copy" if args.copy else "symlink",
+            force=args.force,
             dry_run=args.dry_run,
         )
     elif args.command == "uninstall":
