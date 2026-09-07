@@ -7,6 +7,16 @@ may change before `1.0.0`.
 
 ## [Unreleased]
 
+### Added
+
+- Established the Phase 2 test baseline with a 90% coverage gate and an isolated
+  production-schema fixture that exercises upstream migrations and session capture.
+
+### Fixed
+
+- Closed SQLite connections owned by `session-weaver doctor` and its tests,
+  preventing `ResourceWarning` failures under strict warning handling.
+
 ## [0.1.0] - 2026-09-07
 
 ### Added
