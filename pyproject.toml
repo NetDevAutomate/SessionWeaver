@@ -1,0 +1,77 @@
+[project]
+name = "session-weaver"
+version = "0.1.0"
+description = "Cross-harness session memory: one installable distribution of the session tools, the agent SKILL.md, and the installer that wires the skill into every coding-agent harness"
+authors = [{ name = "Andy Taylor" }]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+keywords = ["sessions", "memory", "agents", "skills", "sqlite", "okf", "ontology"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    # The production session tools live in the StudyLoop monorepo — the single
+    # source of truth this repo deliberately does NOT fork. Pinned to a commit
+    # so `uv tool install` from this repo is reproducible; bump deliberately.
+    "agent-session-tools @ git+https://github.com/NetDevAutomate/StudyLoop.git@c8315ccb74a7255446396fe616dddd684e1b0d14#subdirectory=packages/agent-session-tools",
+]
+
+[project.urls]
+Homepage = "https://www.studyloop.dev/"
+Repository = "https://github.com/NetDevAutomate/session-weaver"
+Source = "https://github.com/NetDevAutomate/StudyLoop"
+
+[project.scripts]
+# Session Weaver's own CLI: skill installation + environment doctor.
+session-weaver = "session_weaver.cli:main"
+# Re-exported session tools so ONE `uv tool install` provides the full
+# standalone toolchain. The implementations come from agent-session-tools
+# (the dependency above); these entries only expose its mains.
+session-context = "agent_session_tools.context.cli:main"
+session-export = "agent_session_tools.export_sessions:main"
+session-repair = "agent_session_tools.repair:main"
+session-query = "agent_session_tools.query_sessions:main"
+session-maint = "agent_session_tools.maintenance:main"
+session-sync = "agent_session_tools.sync:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/session_weaver"]
+
+[tool.hatch.metadata]
+# Permit the direct git reference above.
+allow-direct-references = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# code/ is frozen PoC evidence (the scripts that produced docs/RESULTS-final.md);
+# it is documented, runnable history — not maintained package code.
+extend-exclude = ["code"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+
+[tool.pyright]
+include = ["src", "tests"]
+# code/ is frozen PoC evidence with its own ad-hoc dependencies (numpy, etc.);
+# it is not maintained package code and is excluded from type checking.
+exclude = ["code", ".venv"]
