@@ -152,7 +152,7 @@ def test_canonical_messages_deduplicate_per_session_in_canonical_order(
             timestamp=timestamp,
             seq=seq,
         )
-    for message_id, content, timestamp, seq in reversed(reverse):
+    for message_id, content, timestamp, seq in reverse:
         _insert_message(
             conn,
             message_id,
@@ -687,6 +687,45 @@ def test_status_reports_each_missing_schema_component(
         assert "ontology_relation" in status.missing_tables
     else:
         assert "idx_ontology_relation_object_predicate_subject" in status.missing_indexes
+
+
+@pytest.mark.parametrize(
+    "replacement_sql",
+    (
+        """
+        CREATE INDEX idx_ontology_relation_subject_predicate_object
+        ON ontology_relation(subject, predicate, object)
+        WHERE predicate = 'childOf'
+        """,
+        """
+        CREATE UNIQUE INDEX idx_ontology_relation_subject_predicate_object
+        ON ontology_relation(subject, predicate, object)
+        """,
+        """
+        CREATE INDEX idx_ontology_relation_subject_predicate_object
+        ON ontology_relation(subject DESC, predicate, object)
+        """,
+    ),
+    ids=("partial", "unique", "descending-key"),
+)
+def test_status_rejects_noncanonical_index_semantics(
+    production_store: ProductionStore,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement_sql: str,
+) -> None:
+    """Canonical names and columns do not hide malformed index semantics."""
+    conn = production_store.conn
+    _healthy_status(conn, monkeypatch)
+    index = "idx_ontology_relation_subject_predicate_object"
+    conn.execute(f'DROP INDEX "{index}"')
+    conn.execute(replacement_sql)
+    conn.commit()
+
+    status = ontology_status(conn)
+
+    assert status.healthy is False
+    assert status.missing_indexes == ()
+    assert any(index in error for error in status.schema_errors)
 
 
 def test_status_reports_session_coverage_below_ninety_nine_percent(

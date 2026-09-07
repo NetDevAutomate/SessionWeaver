@@ -1250,11 +1250,37 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
         if index not in index_rows:
             continue
         expected_table = _required_index_table(index)
-        actual_columns = tuple(row[2] for row in conn.execute(f'PRAGMA index_info("{index}")'))
-        if index_rows[index] != expected_table or actual_columns != expected_columns:
+        index_metadata = next(
+            (
+                row
+                for row in conn.execute(f'PRAGMA index_list("{expected_table}")')
+                if row[1] == index
+            ),
+            None,
+        )
+        metadata = (
+            None
+            if index_metadata is None
+            else (
+                bool(index_metadata[2]),
+                index_metadata[3],
+                bool(index_metadata[4]),
+            )
+        )
+        key_definition = tuple(
+            (row[2], bool(row[3]), row[4])
+            for row in conn.execute(f'PRAGMA index_xinfo("{index}")')
+            if row[5]
+        )
+        actual_definition = (index_rows[index], metadata, key_definition)
+        expected_definition = (
+            expected_table,
+            (False, "c", False),
+            tuple((column, False, "BINARY") for column in expected_columns),
+        )
+        if actual_definition != expected_definition:
             schema_errors.append(
-                f"{index} definition {(index_rows[index], actual_columns)!r} != "
-                f"{(expected_table, expected_columns)!r}"
+                f"{index} definition {actual_definition!r} != {expected_definition!r}"
             )
     diagnostics.extend(f"schema error: {error}" for error in schema_errors)
 
