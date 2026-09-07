@@ -464,3 +464,7 @@ CLAUDE.md
 .idea/
 *.code-workspace
 .zed/
+
+
+# Local feature worktrees
+.worktrees/
