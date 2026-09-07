@@ -80,7 +80,7 @@ def _remove_install_target(target: Path) -> None:
         shutil.rmtree(target)
 
 
-def _is_owned_copy(target: Path) -> bool:
+def _has_valid_ownership_marker(target: Path) -> bool:
     marker = target / OWNERSHIP_MARKER
     try:
         return not marker.is_symlink() and marker.read_bytes() == OWNERSHIP_MARKER_BYTES
@@ -115,7 +115,21 @@ def install_skill(
 
     report = Report()
     hub_skill = hub_dir(home) / SKILL_NAME
+    hub_exists = hub_skill.is_symlink() or hub_skill.exists()
+    if hub_exists and (
+        hub_skill.is_symlink()
+        or not hub_skill.is_dir()
+        or not _has_valid_ownership_marker(hub_skill)
+    ):
+        report.add(
+            "conflict",
+            hub_skill,
+            "canonical hub is unowned; valid SessionWeaver marker required before refresh",
+        )
+        return report
     _install_tree(source, hub_skill, dry_run=dry_run)
+    if not dry_run:
+        (hub_skill / OWNERSHIP_MARKER).write_bytes(OWNERSHIP_MARKER_BYTES)
     report.add("hub-install", hub_skill, "canonical copy refreshed")
 
     for harness in harnesses:
@@ -190,7 +204,7 @@ def uninstall_skill(
                 target.unlink()
             report.add("link", target, "symlink removed")
         elif target.is_dir():
-            if not _is_owned_copy(target):
+            if not _has_valid_ownership_marker(target):
                 report.add(
                     "conflict",
                     target,
@@ -204,10 +218,22 @@ def uninstall_skill(
             report.add("conflict", target, "plain file is unowned; not touching it")
         else:
             report.add("skip", target, "nothing installed")
-    if remove_hub and hub_skill.is_dir():
-        if not dry_run:
-            shutil.rmtree(hub_skill)
-        report.add("hub-install", hub_skill, "hub copy removed")
+    if remove_hub:
+        hub_exists = hub_skill.is_symlink() or hub_skill.exists()
+        if hub_exists and (
+            hub_skill.is_symlink()
+            or not hub_skill.is_dir()
+            or not _has_valid_ownership_marker(hub_skill)
+        ):
+            report.add(
+                "conflict",
+                hub_skill,
+                "canonical hub is unowned; valid SessionWeaver marker required for removal",
+            )
+        elif hub_exists:
+            if not dry_run:
+                shutil.rmtree(hub_skill)
+            report.add("hub-install", hub_skill, "hub copy removed")
     return report
 
 

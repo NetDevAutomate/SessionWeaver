@@ -17,9 +17,10 @@ may change before `1.0.0`.
 - Made `install --copy` non-destructive by default: existing targets now
   conflict, while explicit `--force` replaces only the named harness target;
   Codex, OpenCode and pi continue reading the hub without duplicate copies.
-- Added deterministic copy ownership markers and made uninstall preserve
-  unowned directories, plain files, and symlinks that do not target the
-  SessionWeaver hub.
+- Added deterministic ownership markers to harness copies and the canonical
+  hub; installation now preserves an existing unowned hub before any wiring,
+  while uninstall preserves unowned hubs, copy directories, plain files, and
+  symlinks that do not target the SessionWeaver hub.
 - Closed SQLite connections owned by `session-weaver doctor` and its tests,
   preventing `ResourceWarning` failures under strict warning handling.
 

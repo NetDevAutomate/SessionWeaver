@@ -31,6 +31,81 @@ def linkers():
     return [h for h in HARNESSES.values() if not h.reads_hub]
 
 
+def _file_bytes(root: Path) -> dict[Path, bytes]:
+    return {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def test_install_writes_stable_hub_ownership_marker(skill_source, home):
+    report = install_skill([], skill_source=skill_source, home=home)
+
+    marker = hub_dir(home) / SKILL_NAME / ".session-weaver-owned.json"
+    assert marker.read_bytes() == b'{"owner":"session-weaver","schema":1}\n'
+    assert not report.conflicts
+
+
+def test_install_preserves_unowned_hub_and_stops_before_wiring(skill_source, home):
+    hub_skill = hub_dir(home) / SKILL_NAME
+    hub_skill.mkdir(parents=True)
+    (hub_skill / "SKILL.md").write_bytes(b"user-owned hub\x00\xff")
+    nested = hub_skill / "nested"
+    nested.mkdir()
+    (nested / "settings.bin").write_bytes(b"\x00user settings\xff")
+    before = _file_bytes(hub_skill)
+
+    report = install_skill(linkers(), skill_source=skill_source, home=home)
+
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].target == hub_skill
+    assert "unowned" in report.conflicts[0].detail
+    assert _file_bytes(hub_skill) == before
+    assert not (hub_skill / ".session-weaver-owned.json").exists()
+    for harness in linkers():
+        target = harness.resolved_skills_dir(home) / SKILL_NAME
+        assert not target.is_symlink()
+        assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "marker_bytes",
+    [None, b'{"owner":"someone-else","schema":1}\n'],
+    ids=["missing-marker", "invalid-marker"],
+)
+def test_remove_hub_preserves_unowned_bytes_and_reports_conflict(home, marker_bytes):
+    hub_skill = hub_dir(home) / SKILL_NAME
+    hub_skill.mkdir(parents=True)
+    (hub_skill / "SKILL.md").write_bytes(b"user-owned hub\x00\xff")
+    nested = hub_skill / "nested"
+    nested.mkdir()
+    (nested / "settings.bin").write_bytes(b"\x00user settings\xff")
+    if marker_bytes is not None:
+        (hub_skill / ".session-weaver-owned.json").write_bytes(marker_bytes)
+    before = _file_bytes(hub_skill)
+
+    report = uninstall_skill([], home=home, remove_hub=True)
+
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].target == hub_skill
+    assert "unowned" in report.conflicts[0].detail
+    assert _file_bytes(hub_skill) == before
+
+
+def test_remove_hub_removes_directory_with_valid_ownership_marker(home):
+    hub_skill = hub_dir(home) / SKILL_NAME
+    hub_skill.mkdir(parents=True)
+    (hub_skill / "SKILL.md").write_bytes(b"session-weaver skill")
+    (hub_skill / ".session-weaver-owned.json").write_bytes(
+        b'{"owner":"session-weaver","schema":1}\n'
+    )
+
+    report = uninstall_skill([], home=home, remove_hub=True)
+
+    assert not hub_skill.exists()
+    assert any(
+        action.kind == "hub-install" and action.detail == "hub copy removed"
+        for action in report.actions
+    )
+
+
 def test_packaged_skill_ships_a_skill_md():
     assert (packaged_skill_dir() / "SKILL.md").is_file()
 
