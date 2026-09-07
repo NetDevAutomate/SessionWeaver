@@ -234,6 +234,26 @@ def test_repeated_quote_across_two_bodies_is_ambiguous(
     assert _error_codes(result) == {"ambiguous_quote"}
 
 
+def test_visible_sources_cache_is_keyed_on_the_degrade_oversized_flag(
+    production_store: ProductionStore,
+) -> None:
+    """A3c hardening: a second call must not silently reuse the wrong flag's cache."""
+    from agent_session_tools.context.public import open_context
+
+    from session_weaver.concepts import _EvidenceResolver
+
+    _capture(production_store, "cache-key evidence body", key="cache-key-evidence")
+
+    with open_context(production_store.db_path) as context:
+        resolver = _EvidenceResolver(context, "fixture-session-1")
+        first = resolver._visible_sources()
+
+        assert resolver._visible_sources() is first
+
+        with pytest.raises(RuntimeError, match="degrade_oversized"):
+            resolver._visible_sources(degrade_oversized=True)
+
+
 def test_explicit_locator_rejects_wrong_session_mismatch_and_unavailable_evidence(
     production_store: ProductionStore,
 ) -> None:

@@ -52,6 +52,7 @@ session-weaver concept retire CONCEPT_ID --reason "obsolete"
 session-weaver concept bind LEGACY_ID --from binding.json --reason "exact evidence"
 session-weaver concept import-okf /path/to/okf --dry-run --report -
 session-weaver concept project --out DIR [--project ID] [--db PATH] [--json]
+session-weaver recall "<question>" [--k N] [--project ID] [--db PATH] [--json]
 ```
 
 Concept writes target the same SQLite database as the session tools and return
@@ -94,6 +95,18 @@ either run; there is no lock. Every rendered file carries honest frontmatter —
 `model_authorship: model-proposed` always, and `citation_binding: machine-confirmed`
 only for bound roots (`absent` for legacy-unbound roots) — so a reader can tell
 model-proposed interpretation from machine-confirmed citation binding at a glance.
+
+`recall "<question>" [--k N] [--project ID] [--json]` answers with **concepts first, then
+sessions**: a pure AND→OR planner (tokenize, drop stop words/short tokens, quote every
+term, try the AND-joined query before falling back to OR) searches concepts through the
+same scope-authorization seam `concept project` uses, then searches raw session text
+through `messages_fts`, deduplicated against any session a returned concept already
+cites. A legacy-unbound concept is returned labelled `legacy-unbound (session-level
+provenance)` with no citations, never silently upgraded to a machine-confirmed one. The
+report shape is frozen and schema-checked
+([`recall-contract.json`](docs/data/recall-contract.json)). Recall ships with **no
+embeddings** and never consults the tier-1 ontology tables — it is pure keyword search
+over the same authoritative stores `concept project` reads.
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a

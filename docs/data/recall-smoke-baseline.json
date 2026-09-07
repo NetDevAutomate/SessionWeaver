@@ -1,0 +1,23 @@
+{
+  "captured_at_utc": "2026-09-07T23:12:05Z",
+  "cleanup_ok": true,
+  "evidence_schema": "session-weaver.recall-smoke-baseline",
+  "evidence_version": 1,
+  "import_seconds": 67.301503,
+  "okf_source_sentinel_unchanged": true,
+  "queries": {
+    "newest_project_basename": {
+      "concepts": 5,
+      "fallback_used": false,
+      "seconds": 0.306358,
+      "sessions": 5
+    },
+    "nonsense_token": {
+      "concepts": 0,
+      "fallback_used": false,
+      "seconds": 0.294552,
+      "sessions": 0
+    }
+  },
+  "source_sentinels_unchanged": true
+}
