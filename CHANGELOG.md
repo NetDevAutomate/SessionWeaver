@@ -9,6 +9,10 @@ may change before `1.0.0`.
 
 ### Added
 
+- Added the deterministic Tier-1 ontology core: canonical message normalization,
+  exact frozen-PoC structural extraction, stable A-Box/T-Box identities,
+  transactional full and incremental rebuilds, canonical logical hashing, and a
+  read-only health model for later CLI and doctor integration.
 - Established the Phase 2 test baseline with a 90% coverage gate and an isolated
   production-schema fixture that exercises upstream migrations and session capture.
 
