@@ -277,3 +277,75 @@ def test_ontology_commands_close_owned_connections_on_success_and_failure(
     assert isinstance(connect_calls[3][0], Path)
     for conn in opened:
         _assert_closed(conn)
+
+
+@pytest.mark.parametrize("ontology_command", ("rebuild", "status"))
+def test_ontology_explicit_empty_db_is_usage_error_without_opening_default(
+    ontology_command: str,
+    fake_home: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connect_calls: list[object] = []
+
+    def unexpected_connect(
+        database: object,
+        *_args: object,
+        **_kwargs: object,
+    ) -> sqlite3.Connection:
+        connect_calls.append(database)
+        raise AssertionError("explicit empty --db must be rejected before opening SQLite")
+
+    monkeypatch.setattr(sqlite3, "connect", unexpected_connect)
+
+    with pytest.raises(SystemExit) as raised:
+        main(["ontology", ontology_command, "--db", ""])
+
+    assert raised.value.code == 2
+    assert "--db must not be empty" in capsys.readouterr().err
+    assert connect_calls == []
+    assert not (fake_home / ".config/studyloop/sessions.db").exists()
+
+
+def test_ontology_status_reports_blob_timestamp_as_unhealthy_json(
+    production_store: ProductionStore,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "session_weaver.ontology._utc_now",
+        lambda: "9998-01-01T00:00:00Z",
+    )
+    rebuild_ontology(production_store.conn)
+    production_store.conn.execute(
+        "UPDATE sessions SET updated_at = ? WHERE id = 'fixture-session-1'",
+        (sqlite3.Binary(b"not-text"),),
+    )
+    production_store.conn.commit()
+
+    assert main(["ontology", "status", "--db", str(production_store.db_path)]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["healthy"] is False
+    assert payload["malformed_timestamps"] == ["fixture-session-1"]
+    assert (
+        "malformed non-null session updated_at values: fixture-session-1" in payload["diagnostics"]
+    )
+
+
+def test_ontology_status_contains_unexpected_health_failure(
+    production_store: ProductionStore,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_status(_conn: sqlite3.Connection) -> None:
+        raise TypeError("unexpected corrupt health value")
+
+    monkeypatch.setattr("session_weaver.cli.ontology_status", fail_status)
+
+    assert main(["ontology", "status", "--db", str(production_store.db_path)]) == 1
+    assert json.loads(capsys.readouterr().err) == {
+        "command": "ontology status",
+        "error": "database unavailable",
+        "healthy": False,
+    }

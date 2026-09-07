@@ -1075,3 +1075,37 @@ def test_ontology_tables_are_excluded_from_normal_sync_controls_and_dump_sql() -
     assert "FROM sessions" in dump_sql
     for table in ONTOLOGY_TABLES:
         assert table not in dump_sql
+
+
+@pytest.mark.parametrize("timestamp_location", ("source", "build-state"))
+def test_status_treats_blob_timestamps_as_unhealthy_diagnostics(
+    production_store: ProductionStore,
+    monkeypatch: pytest.MonkeyPatch,
+    timestamp_location: str,
+) -> None:
+    conn = production_store.conn
+    _healthy_status(conn, monkeypatch)
+    if timestamp_location == "source":
+        conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = 'fixture-session-1'",
+            (sqlite3.Binary(b"not-text"),),
+        )
+    else:
+        conn.execute(
+            "UPDATE ontology_build_state SET completed_at = ?",
+            (sqlite3.Binary(b"not-text"),),
+        )
+    conn.commit()
+
+    status = ontology_status(conn)
+
+    assert status.healthy is False
+    if timestamp_location == "source":
+        assert status.malformed_timestamps == ("fixture-session-1",)
+        assert (
+            "malformed non-null session updated_at values: fixture-session-1" in status.diagnostics
+        )
+    else:
+        assert status.completed_at is None
+        assert status.completed_at_valid is False
+        assert "completed-at is missing or malformed" in status.diagnostics

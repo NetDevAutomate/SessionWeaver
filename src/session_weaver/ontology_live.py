@@ -24,7 +24,7 @@ from .ontology import (
 )
 
 _EVIDENCE_SCHEMA = "session-weaver.ontology-tier1-baseline"
-_EVIDENCE_VERSION = 1
+_EVIDENCE_VERSION = 2
 _MAX_COLD_REBUILD_SECONDS = 5.0
 
 
@@ -35,7 +35,6 @@ class _SourceSentinels:
     session_count: int
     message_count: int
     max_updated_at: str | None
-    sha256: str
 
 
 def _sha256(path: Path) -> str:
@@ -50,44 +49,37 @@ def _read_only_uri(path: Path) -> str:
     return f"{path.resolve().as_uri()}?mode=ro"
 
 
-def _sentinels_from_connection(
-    conn: sqlite3.Connection,
-    *,
-    sha256: str,
-) -> _SourceSentinels:
+def _sentinels_from_connection(conn: sqlite3.Connection) -> _SourceSentinels:
     return _SourceSentinels(
         schema_version=int(conn.execute("PRAGMA schema_version").fetchone()[0]),
         user_version=int(conn.execute("PRAGMA user_version").fetchone()[0]),
         session_count=int(conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]),
         message_count=int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]),
         max_updated_at=conn.execute("SELECT MAX(updated_at) FROM sessions").fetchone()[0],
-        sha256=sha256,
     )
 
 
 def _read_source_sentinels(source: Path) -> _SourceSentinels:
-    source_hash = _sha256(source)
     with closing(sqlite3.connect(_read_only_uri(source), uri=True)) as conn:
         conn.execute("PRAGMA query_only = ON")
         conn.execute("BEGIN")
         try:
-            return _sentinels_from_connection(conn, sha256=source_hash)
+            return _sentinels_from_connection(conn)
         finally:
             conn.rollback()
 
 
-def _create_online_backup(source: Path, backup: Path) -> _SourceSentinels:
-    source_hash = _sha256(source)
+def _create_online_backup(source: Path, backup: Path) -> tuple[_SourceSentinels, str]:
     with closing(sqlite3.connect(_read_only_uri(source), uri=True)) as source_conn:
         source_conn.execute("PRAGMA query_only = ON")
         source_conn.execute("BEGIN")
         try:
-            sentinels = _sentinels_from_connection(source_conn, sha256=source_hash)
+            sentinels = _sentinels_from_connection(source_conn)
             with closing(sqlite3.connect(backup)) as backup_conn:
                 source_conn.backup(backup_conn)
+            return sentinels, _sha256(backup)
         finally:
             source_conn.rollback()
-    return sentinels
 
 
 def _timed_rebuild(
@@ -133,7 +125,7 @@ def _validate_acceptance(
 def _build_evidence(
     *,
     source: _SourceSentinels,
-    backup_snapshot_hash: str,
+    source_snapshot_hash: str,
     backup_final_hash: str,
     first: OntologyBuildResult,
     first_seconds: float,
@@ -150,14 +142,13 @@ def _build_evidence(
         "captured_at_utc": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "extraction_version": EXTRACTION_VERSION,
         "source": {
-            "sha256": source.sha256,
+            "online_backup_sha256": source_snapshot_hash,
             "schema_version": source.schema_version,
             "user_version": source.user_version,
             "session_count": source.session_count,
             "message_count": source.message_count,
         },
         "backup": {
-            "sha256": backup_snapshot_hash,
             "post_rebuild_sha256": backup_final_hash,
         },
         "counts": {
@@ -227,8 +218,7 @@ def run_live_copy_acceptance(
     os.close(file_descriptor)
     backup = Path(backup_name)
     try:
-        before = _create_online_backup(source, backup)
-        backup_snapshot_hash = _sha256(backup)
+        before, source_snapshot_hash = _create_online_backup(source, backup)
         with closing(sqlite3.connect(backup)) as conn:
             first, first_seconds = _timed_rebuild(conn, incremental=False)
             second, second_seconds = _timed_rebuild(conn, incremental=False)
@@ -243,7 +233,7 @@ def run_live_copy_acceptance(
 
         return _build_evidence(
             source=before,
-            backup_snapshot_hash=backup_snapshot_hash,
+            source_snapshot_hash=source_snapshot_hash,
             backup_final_hash=backup_final_hash,
             first=first,
             first_seconds=first_seconds,

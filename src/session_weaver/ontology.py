@@ -299,11 +299,16 @@ def _sha256_json(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def _parse_timestamp(timestamp: str | None) -> datetime | None:
-    if timestamp is None:
+def _timestamp_text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _parse_timestamp(timestamp: object) -> datetime | None:
+    timestamp_text = _timestamp_text(timestamp)
+    if timestamp_text is None:
         return None
-    normalized = timestamp.removesuffix("Z")
-    if timestamp.endswith("Z"):
+    normalized = timestamp_text.removesuffix("Z")
+    if timestamp_text.endswith("Z"):
         normalized += "+00:00"
     try:
         parsed = datetime.fromisoformat(normalized)
@@ -1312,10 +1317,11 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
             (
                 extraction_version,
                 recorded_hash,
-                completed_at,
+                raw_completed_at,
                 recorded_source_sessions,
                 recorded_source_messages,
             ) = state_rows[0]
+            completed_at = _timestamp_text(raw_completed_at)
         else:
             diagnostics.append("ontology build state is missing or not singular")
 

@@ -69,8 +69,10 @@ def test_live_copy_acceptance_mutates_only_backup_and_returns_sanitized_evidence
     assert _sha256(production_store.db_path) == source_hash_before
     assert _backup_artifacts(tmp_path) == set()
     assert evidence["evidence_schema"] == "session-weaver.ontology-tier1-baseline"
-    assert evidence["evidence_version"] == 1
-    assert evidence["source"]["sha256"] == source_hash_before
+    assert evidence["evidence_version"] == 2
+    assert len(evidence["source"]["online_backup_sha256"]) == 64
+    assert "sha256" not in evidence["source"]
+    assert set(evidence["backup"]) == {"post_rebuild_sha256"}
     assert evidence["source"]["session_count"] == 2
     assert evidence["source"]["message_count"] == 4
     assert (
@@ -92,6 +94,45 @@ def test_live_copy_acceptance_mutates_only_backup_and_returns_sanitized_evidence
         "fixture-session-1",
     ):
         assert forbidden not in serialized
+
+
+def test_source_content_receipt_includes_committed_wal_frames(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = production_store.db_path
+    wal_conn = sqlite3.connect(source)
+    try:
+        assert wal_conn.execute("PRAGMA journal_mode = WAL").fetchone() == ("wal",)
+        wal_conn.execute("PRAGMA wal_autocheckpoint = 0")
+        main_file_hash = _sha256(source)
+        wal_conn.execute(
+            """
+            INSERT INTO sessions(
+                id, source, project_path, git_branch, created_at, updated_at, metadata
+            ) VALUES (
+                'wal-receipt-sentinel', 'kiro', NULL, NULL,
+                '2026-09-07T11:00:00Z', '2026-09-07T11:00:00Z', '{}'
+            )
+            """
+        )
+        wal_conn.commit()
+
+        wal_path = Path(f"{source}-wal")
+        assert wal_path.is_file()
+        assert wal_path.stat().st_size > 0
+        assert _sha256(source) == main_file_hash
+
+        monkeypatch.setattr(ontology, "_utc_now", lambda: "9998-01-01T00:00:00Z")
+        evidence = run_live_copy_acceptance(source, _backup_dir=tmp_path)
+    finally:
+        wal_conn.close()
+
+    assert evidence["source"]["session_count"] == 3
+    assert evidence["source"]["online_backup_sha256"] != main_file_hash
+    assert "sha256" not in evidence["source"]
+    assert evidence["source_sentinels_unchanged"] is True
 
 
 def test_live_copy_acceptance_deletes_backup_when_rebuild_fails(

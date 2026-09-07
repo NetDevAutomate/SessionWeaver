@@ -73,7 +73,7 @@ URI, never creates the database, and exits nonzero for any unhealthy dimension.
 3. **Structure (tier-1 ontology, $0)** — deterministic entity resolution builds a real
    T-Box/A-Box. The post-pin Online Backup baseline contains 7 classes, 6 typed
    properties, 13,336 individuals and 28,766 relations with zero domain/range
-   violations; its cold full rebuild completed in 3.25 s. See the sanitized
+   violations; its cold full rebuild completed in 3.28 s. See the sanitized
    [`ontology-tier1-baseline.json`](docs/data/ontology-tier1-baseline.json).
 4. **Distil (tier-2 wind-down → OKF)** — a capable model reads each session's FULL text
    and authors knowledge concepts (Decision/Finding/Problem/Preference/Procedure) as
@@ -86,10 +86,12 @@ URI, never creates the database, and exits nonzero for any unhealthy dimension.
 ### Ontology safety and sync boundary
 
 The maintained opt-in acceptance test opens an explicit source read-only, records only
-schema/count/hash/freshness sentinels, creates a unique SQLite Online Backup under
-`/tmp`, and runs rebuilds only against that disposable copy. It never uses `cp` for a
-WAL database; source sentinels are compared again before the backup and sidecars are
-deleted. Retained evidence contains counts, hashes, timings, and health verdicts only.
+schema/count/freshness sentinels, creates a unique SQLite Online Backup under `/tmp`,
+and runs rebuilds only against that disposable copy. The retained source content receipt
+hashes that transaction-aligned Online Backup before any ontology mutation; it never
+hashes the bare main file of a WAL database and never uses `cp`. Source sentinels are
+compared again before the backup and sidecars are deleted. Retained evidence contains
+counts, hashes, timings, and health verdicts only.
 
 Ontology tables are absent from the pinned normal and global **delta-sync** allow lists.
 The pinned first-time `_seed_remote_db` path still transfers an entire SQLite Online

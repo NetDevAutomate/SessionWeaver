@@ -30,6 +30,14 @@ may change before `1.0.0`.
 
 ### Fixed
 
+- Rejected an explicit empty ontology `--db` as a usage error before any SQLite
+  opener can select the default store, and made `None` the only default sentinel.
+- Normalized legal non-text SQLite timestamp values into deterministic unhealthy
+  diagnostics; status now returns a sanitized failure for unexpected health errors,
+  while doctor records the failure and continues independent tool checks.
+- Replaced the WAL-incomplete main-file source hash with an evidence-schema-v2
+  receipt derived from the transaction-aligned SQLite Online Backup before ontology
+  mutation; committed-WAL regression coverage proves the snapshot includes those frames.
 - Made `install --copy` non-destructive by default: existing targets now
   conflict, while explicit `--force` replaces only the named harness target;
   Codex, OpenCode and pi continue reading the hub without duplicate copies.

@@ -26,10 +26,17 @@ def _harness_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _nonempty_db_arg(value: str) -> str:
+    if value == "":
+        raise argparse.ArgumentTypeError("--db must not be empty")
+    return value
+
+
 def _db_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--db",
         default=None,
+        type=_nonempty_db_arg,
         help="path to sessions.db (default: ~/.config/studyloop/sessions.db)",
     )
 
@@ -88,7 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _database_path(db_arg: str | None) -> Path:
-    return Path(db_arg).expanduser() if db_arg else Path.home() / ".config/studyloop/sessions.db"
+    if db_arg is None:
+        return Path.home() / ".config/studyloop/sessions.db"
+    return Path(db_arg).expanduser()
 
 
 def _read_only_uri(path: Path) -> str:
@@ -135,7 +144,10 @@ def _ontology_status(db_arg: str | None) -> int:
         with closing(sqlite3.connect(_read_only_uri(_database_path(db_arg)), uri=True)) as conn:
             conn.execute("PRAGMA query_only = ON")
             result = ontology_status(conn)
-    except (OntologyError, sqlite3.Error):
+        payload = asdict(result)
+        payload["command"] = "ontology status"
+        _emit_json(payload)
+    except Exception:
         _emit_json(
             {
                 "command": "ontology status",
@@ -146,9 +158,6 @@ def _ontology_status(db_arg: str | None) -> int:
         )
         return 1
 
-    payload = asdict(result)
-    payload["command"] = "ontology status"
-    _emit_json(payload)
     return 0 if result.healthy else 1
 
 
@@ -183,11 +192,10 @@ def _doctor(db_arg: str | None) -> int:
                 print(f"ok    session store {db}: {sessions} sessions / {messages} messages")
                 try:
                     ontology_result = ontology_status(conn)
-                except sqlite3.Error:
+                    failures += _print_doctor_ontology(ontology_result)
+                except Exception:
                     print("FAIL  ontology inspection failed")
                     failures += 1
-                else:
-                    failures += _print_doctor_ontology(ontology_result)
         except sqlite3.Error as exc:
             print(f"FAIL  session store {db}: unreadable ({exc})")
             failures += 1

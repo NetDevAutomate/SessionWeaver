@@ -210,3 +210,53 @@ def test_doctor_reports_missing_tools_without_hiding_healthy_ontology(
     assert rc == 1
     assert f"ok    ontology {EXTRACTION_VERSION}" in out
     assert "session-export not on PATH" in out
+
+
+def test_doctor_reports_blob_timestamp_and_continues_independent_checks(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    production_store.conn.execute(
+        "UPDATE sessions SET updated_at = ? WHERE id = 'doctor-sentinel'",
+        (sqlite3.Binary(b"not-text"),),
+    )
+    production_store.conn.commit()
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "malformed non-null session updated_at values: doctor-sentinel" in out
+    assert "ok    session-export ->" in out
+    assert "ok    session-query ->" in out
+    assert "ok    session-sync ->" in out
+    assert "ok    session-repair ->" in out
+
+
+def test_doctor_contains_unexpected_ontology_failure_and_continues_checks(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+
+    def fail_status(_conn: sqlite3.Connection) -> None:
+        raise TypeError("unexpected corrupt health value")
+
+    monkeypatch.setattr("session_weaver.cli.ontology_status", fail_status)
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "FAIL  ontology inspection failed" in out
+    assert "ok    session-export ->" in out
+    assert "ok    session-query ->" in out
+    assert "ok    session-sync ->" in out
+    assert "ok    session-repair ->" in out
