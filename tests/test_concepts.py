@@ -641,7 +641,9 @@ def test_current_state_total_order_is_independent_of_timestamp_and_insert_order(
             logical = 100 if standing == "accepted" else 1
             payload = f"{concept_id}:{standing}:{index}"
             conn.execute(
-                """INSERT INTO context_concept_events VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO context_concept_events(
+                   id,concept_id,parent_event_id,standing,actor,reason,display_timestamp,
+                   origin_instance,origin_seq,logical_time) VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     hashlib.sha256(payload.encode()).hexdigest(),
                     concept_id,

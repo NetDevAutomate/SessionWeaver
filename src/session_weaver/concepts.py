@@ -15,7 +15,7 @@ from agent_session_tools.config_loader import get_db_path, load_config
 from agent_session_tools.context.public import AgentContext, open_context
 from agent_session_tools.context.scope import visibility_sql
 
-from .concept_schema import _ensure_schema
+from .concept_schema import _MAX_COUNTER, _ensure_schema
 from .winddown import (
     _Concept,
     _Issue,
@@ -239,15 +239,34 @@ class _ConceptRepository:
         maximum = self.conn.execute(
             "SELECT COALESCE(max(logical_time),0) FROM context_concept_events"
         ).fetchone()[0]
+        expected = self.conn.execute(
+            "SELECT instance FROM context_access_state WHERE id=1"
+        ).fetchone()
+        clock = self.conn.execute(
+            """SELECT origin_instance,origin_seq,logical_time
+               FROM context_concept_clock WHERE id=1"""
+        ).fetchone()
+        if expected is None or clock is None or clock[0] != expected[0]:
+            raise RuntimeError("Concept clock is unavailable or changed identity")
+        if (
+            type(maximum) is not int
+            or type(clock[1]) is not int
+            or type(clock[2]) is not int
+            or maximum < 0
+            or not 0 <= clock[1] <= _MAX_COUNTER
+            or not 0 <= clock[2] <= _MAX_COUNTER
+        ):
+            raise RuntimeError("Concept clock counters are invalid")
+        if maximum >= _MAX_COUNTER or clock[1] >= _MAX_COUNTER or clock[2] >= _MAX_COUNTER:
+            raise RuntimeError("Concept clock counter space is exhausted")
         row = self.conn.execute(
             """UPDATE context_concept_clock
                SET origin_seq=origin_seq+1,
                    logical_time=max(logical_time,?)+1
-               WHERE id=1 AND origin_instance=(
-                 SELECT instance FROM context_access_state WHERE id=1
-               )
+               WHERE id=1 AND origin_instance=?
+                 AND origin_seq=? AND logical_time=?
                RETURNING origin_instance,origin_seq,logical_time""",
-            (maximum,),
+            (maximum, clock[0], clock[1], clock[2]),
         ).fetchone()
         if row is None:
             raise RuntimeError("Concept clock is unavailable or changed identity")
@@ -279,11 +298,13 @@ class _ConceptRepository:
         identity = _hash_payload(payload)
         self.conn.execute(
             """INSERT INTO context_concept_events(
-               id,concept_id,parent_event_id,standing,actor,reason,display_timestamp,
-               origin_instance,origin_seq,logical_time) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               id,concept_id,initial_concept_id,parent_event_id,standing,actor,reason,
+               display_timestamp,origin_instance,origin_seq,logical_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 identity,
                 concept_id,
+                concept_id if parent_event_id is None else None,
                 parent_event_id,
                 standing,
                 actor,
@@ -759,7 +780,7 @@ class ConceptService:
                 confidence=float(root["confidence"]),
                 source_session_id=cast(str, root["source_session_id"]),
                 source_uri=cast(str, root["source_uri"]),
-                producer=actor,
+                producer=cast(str, root["producer"]),
                 legacy_file_sha256=cast(str, root["legacy_file_sha256"]),
                 supersedes_concept_id=concept_id,
             )

@@ -131,10 +131,12 @@ def _seed_legacy(
     event_id = hashlib.sha256(event_payload.encode()).hexdigest()
     conn.execute(
         """INSERT INTO context_concept_events(
-        id,concept_id,parent_event_id,standing,actor,reason,display_timestamp,
-        origin_instance,origin_seq,logical_time) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        id,concept_id,initial_concept_id,parent_event_id,standing,actor,reason,
+        display_timestamp,origin_instance,origin_seq,logical_time)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             event_id,
+            concept_id,
             concept_id,
             None,
             "proposed",
@@ -266,7 +268,9 @@ def test_event_parent_must_belong_to_same_concept_and_origin_sequence_is_unique(
 
     with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
         conn.execute(
-            """INSERT INTO context_concept_events VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO context_concept_events(
+               id,concept_id,parent_event_id,standing,actor,reason,display_timestamp,
+               origin_instance,origin_seq,logical_time) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 "a" * 64,
                 second_id,
@@ -282,7 +286,9 @@ def test_event_parent_must_belong_to_same_concept_and_origin_sequence_is_unique(
         )
     with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
         conn.execute(
-            """INSERT INTO context_concept_events VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO context_concept_events(
+               id,concept_id,parent_event_id,standing,actor,reason,display_timestamp,
+               origin_instance,origin_seq,logical_time) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 "b" * 64,
                 first_id,

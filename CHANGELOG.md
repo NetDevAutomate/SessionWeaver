@@ -34,6 +34,10 @@ may change before `1.0.0`.
 
 ### Fixed
 
+- Closed direct-SQL concept integrity gaps: bound roots now retain exact citation
+  closure, lifecycle counters reject non-integer and exhausted values, legacy-bound
+  successors must preserve every copied immutable field, and roots cannot commit
+  without exactly one initial proposed lifecycle event.
 - Rejected an explicit empty ontology `--db` as a usage error before any SQLite
   opener can select the default store, and made `None` the only default sentinel.
 - Normalized legal non-text SQLite timestamp values into deterministic unhealthy

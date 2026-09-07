@@ -18,6 +18,8 @@ from uuid import uuid4
 
 SCHEMA_VERSION = 1
 UPSTREAM_SCHEMA_VERSION = 47
+_SQLITE_MAX_INTEGER = (1 << 63) - 1
+_MAX_COUNTER = _SQLITE_MAX_INTEGER - 1
 
 
 class _SchemaObject(NamedTuple):
@@ -50,6 +52,8 @@ _PAYLOAD_OBJECTS = (
             legacy_file_sha256 TEXT
                 CHECK(legacy_file_sha256 IS NULL OR length(legacy_file_sha256)=64),
             supersedes_concept_id TEXT REFERENCES context_concepts(id),
+            FOREIGN KEY(id) REFERENCES context_concept_events(initial_concept_id)
+              DEFERRABLE INITIALLY DEFERRED,
             CHECK(
               (origin='winddown' AND binding_state='bound' AND assertion_id=id
                 AND id NOT LIKE 'legacy:%' AND legacy_file_sha256 IS NULL
@@ -109,6 +113,7 @@ _PAYLOAD_OBJECTS = (
           NOT EXISTS (
             SELECT 1 FROM context_assertions a
             WHERE a.id=NEW.assertion_id AND a.statement=NEW.statement
+              AND a.proposed_state='unknown' AND a.proposed_target IS NULL
           )
           OR NOT (SELECT count(*) FROM context_citations c
                   WHERE c.assertion_id=NEW.assertion_id) BETWEEN 1 AND 8
@@ -116,10 +121,55 @@ _PAYLOAD_OBJECTS = (
             SELECT 1 FROM context_citations c
             LEFT JOIN context_evidence e ON e.id=c.evidence_id
             WHERE c.assertion_id=NEW.assertion_id
-              AND (e.id IS NULL OR e.session_id!=NEW.source_session_id)
+              AND (e.id IS NULL OR e.session_id!=NEW.source_session_id
+                OR typeof(c.start_offset)!='integer'
+                OR typeof(c.end_offset)!='integer'
+                OR typeof(c.quote)!='text'
+                OR c.start_offset<0 OR c.end_offset<=c.start_offset
+                OR c.end_offset>length(e.body)
+                OR substr(e.body,c.start_offset+1,c.end_offset-c.start_offset)!=c.quote)
           )
         )
         BEGIN SELECT RAISE(ABORT, 'bound concept invariant failed'); END""",
+    ),
+    _SchemaObject(
+        "trigger",
+        "context_citations_bound_insert",
+        """CREATE TRIGGER context_citations_bound_insert
+        BEFORE INSERT ON context_citations
+        WHEN EXISTS (
+          SELECT 1 FROM context_concepts c
+          WHERE c.binding_state='bound' AND c.assertion_id=NEW.assertion_id
+        ) AND (
+          (SELECT count(*) FROM context_citations c
+           WHERE c.assertion_id=NEW.assertion_id)>=8
+          OR typeof(NEW.start_offset)!='integer'
+          OR typeof(NEW.end_offset)!='integer'
+          OR typeof(NEW.quote)!='text'
+          OR NEW.start_offset<0 OR NEW.end_offset<=NEW.start_offset
+          OR NOT EXISTS (
+            SELECT 1 FROM context_concepts c
+            JOIN context_evidence e ON e.id=NEW.evidence_id
+            WHERE c.binding_state='bound' AND c.assertion_id=NEW.assertion_id
+              AND e.session_id=c.source_session_id
+              AND NEW.end_offset<=length(e.body)
+              AND substr(e.body,NEW.start_offset+1,
+                         NEW.end_offset-NEW.start_offset)=NEW.quote
+          )
+        )
+        BEGIN SELECT RAISE(ABORT, 'bound citation invariant failed'); END""",
+    ),
+    _SchemaObject(
+        "trigger",
+        "context_citations_bound_delete",
+        """CREATE TRIGGER context_citations_bound_delete
+        BEFORE DELETE ON context_citations
+        WHEN EXISTS (
+          SELECT 1 FROM context_concepts c
+          WHERE c.binding_state='bound' AND c.assertion_id=OLD.assertion_id
+        ) AND (SELECT count(*) FROM context_citations c
+               WHERE c.assertion_id=OLD.assertion_id)=1
+        BEGIN SELECT RAISE(ABORT, 'bound citation invariant failed'); END""",
     ),
     _SchemaObject(
         "trigger",
@@ -129,7 +179,14 @@ _PAYLOAD_OBJECTS = (
           SELECT 1 FROM context_concepts previous
           WHERE previous.id=NEW.supersedes_concept_id
             AND previous.binding_state='legacy-unbound'
+            AND previous.kind=NEW.kind
+            AND previous.title=NEW.title
+            AND previous.statement=NEW.statement
+            AND previous.canonical_tags=NEW.canonical_tags
+            AND previous.confidence=NEW.confidence
             AND previous.source_session_id=NEW.source_session_id
+            AND previous.source_uri=NEW.source_uri
+            AND previous.producer=NEW.producer
             AND previous.legacy_file_sha256=NEW.legacy_file_sha256
         )
         BEGIN SELECT RAISE(ABORT, 'legacy successor invariant failed'); END""",
@@ -143,23 +200,33 @@ _PAYLOAD_OBJECTS = (
     _SchemaObject(
         "table",
         "context_concept_events",
-        """CREATE TABLE context_concept_events (
+        f"""CREATE TABLE context_concept_events (
             id TEXT PRIMARY KEY NOT NULL CHECK(length(id)=64),
             concept_id TEXT NOT NULL REFERENCES context_concepts(id) ON DELETE CASCADE,
+            initial_concept_id TEXT UNIQUE,
             parent_event_id TEXT,
             standing TEXT NOT NULL CHECK(standing IN ('proposed','accepted','retired')),
             actor TEXT NOT NULL CHECK(length(trim(actor))>0),
             reason TEXT NOT NULL CHECK(length(trim(reason))>0),
             display_timestamp TEXT NOT NULL CHECK(length(trim(display_timestamp))>0),
             origin_instance TEXT NOT NULL CHECK(length(trim(origin_instance))>0),
-            origin_seq INTEGER NOT NULL CHECK(origin_seq>0),
-            logical_time INTEGER NOT NULL CHECK(logical_time>0),
+            origin_seq INTEGER NOT NULL
+              CHECK(typeof(origin_seq)='integer'
+                AND origin_seq BETWEEN 1 AND {_MAX_COUNTER}),
+            logical_time INTEGER NOT NULL
+              CHECK(typeof(logical_time)='integer'
+                AND logical_time BETWEEN 1 AND {_MAX_COUNTER}),
             UNIQUE(id,concept_id),
             UNIQUE(origin_instance,origin_seq),
             FOREIGN KEY(parent_event_id,concept_id)
               REFERENCES context_concept_events(id,concept_id),
-            CHECK((parent_event_id IS NULL AND standing='proposed') OR
-                  (parent_event_id IS NOT NULL AND standing!='proposed'))
+            CHECK(
+              (parent_event_id IS NULL AND standing='proposed'
+                AND initial_concept_id IS NOT NULL AND initial_concept_id=concept_id)
+              OR
+              (parent_event_id IS NOT NULL AND standing!='proposed'
+                AND initial_concept_id IS NULL)
+            )
         )""",
     ),
     _SchemaObject(
@@ -185,11 +252,15 @@ _PAYLOAD_OBJECTS = (
     _SchemaObject(
         "table",
         "context_concept_clock",
-        """CREATE TABLE context_concept_clock (
+        f"""CREATE TABLE context_concept_clock (
             id INTEGER PRIMARY KEY CHECK(id=1),
             origin_instance TEXT NOT NULL UNIQUE,
-            origin_seq INTEGER NOT NULL CHECK(origin_seq>=0),
-            logical_time INTEGER NOT NULL CHECK(logical_time>=0)
+            origin_seq INTEGER NOT NULL
+              CHECK(typeof(origin_seq)='integer'
+                AND origin_seq BETWEEN 0 AND {_MAX_COUNTER}),
+            logical_time INTEGER NOT NULL
+              CHECK(typeof(logical_time)='integer'
+                AND logical_time BETWEEN 0 AND {_MAX_COUNTER})
         )""",
     ),
     _SchemaObject(
@@ -349,7 +420,12 @@ def _verify_clock(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if expected is None or actual is None or actual[0] != expected[0]:
         raise RuntimeError("Concept clock is missing or not pinned to this store instance")
-    if type(actual[1]) is not int or type(actual[2]) is not int:
+    if (
+        type(actual[1]) is not int
+        or type(actual[2]) is not int
+        or not 0 <= actual[1] <= _MAX_COUNTER
+        or not 0 <= actual[2] <= _MAX_COUNTER
+    ):
         raise RuntimeError("Concept clock counters are invalid")
 
 
