@@ -912,3 +912,391 @@ def test_post_commit_report_failure_emits_truthful_partial_success_and_keeps_row
     ).fetchone() == (expected_id,)
     assert not report.exists()
     assert list(tmp_path.glob(".session-weaver-*.tmp")) == []
+
+
+def _projection_counts(conn: sqlite3.Connection) -> tuple[int, ...]:
+    return tuple(
+        conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in (
+            "context_assertions",
+            "context_citations",
+            "context_concepts",
+            "context_concept_events",
+            "context_concept_fts",
+        )
+    )
+
+
+def test_project_cli_json_success_rerun_and_database_immutability(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    private_quote = "PRIVATE CLI PROJECTION EVIDENCE"
+    _capture(production_store, private_quote, key="cli-projection")
+    service = ConceptService(production_store.db_path, now=lambda: _NOW)
+    created = service.winddown(
+        "fixture-session-1",
+        _winddown_document(private_quote, description="CLI projected statement."),
+        actor="fixture-model",
+    )
+    before = _projection_counts(production_store.conn)
+    out = tmp_path / "cli-projection"
+    argv = [
+        "concept",
+        "project",
+        "--out",
+        str(out),
+        "--db",
+        str(production_store.db_path),
+        "--json",
+    ]
+
+    assert main(argv) == 0
+    first = _json_output(capsys)
+    assert first["command"] == "concept project"
+    assert first["out"] == str(out)
+    assert first["status"] == "ok"
+    assert first["selected"] == first["rendered"] == first["created"] == first["writes"] == 1
+    assert first["project"] is None
+    assert first["scope"] == "unclassified"
+    assert len(first["policy_digest"]) == 64
+    assert private_quote not in json.dumps(first)
+    assert created.concept_ids[0] not in json.dumps(first)
+    assert _projection_counts(production_store.conn) == before
+
+    assert main(argv) == 0
+    second = _json_output(capsys)
+    assert second["unchanged"] == 1
+    assert second["writes"] == 0
+    assert _projection_counts(production_store.conn) == before
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["concept", "project", "--out", ""], "--out must not be empty"),
+        (
+            ["concept", "project", "--out", "projection", "--project", ""],
+            "--project must not be empty",
+        ),
+        (
+            ["concept", "project", "--out", "projection", "--db", ""],
+            "--db must not be empty",
+        ),
+    ],
+)
+def test_project_cli_rejects_explicit_empty_values_before_service_opener(
+    argv: list[str],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnexpectedService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("empty projection input must be rejected before opener")
+
+    monkeypatch.setattr("session_weaver.cli.ConceptService", UnexpectedService, raising=False)
+
+    with pytest.raises(SystemExit) as raised:
+        main(argv)
+
+    assert raised.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_project_cli_conflict_is_exit_one_and_preserves_unowned_directory(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ConceptService(production_store.db_path, now=lambda: _NOW)
+    out = tmp_path / "unowned-cli-projection"
+    out.mkdir()
+    sentinel = out / "sentinel.txt"
+    sentinel.write_bytes(b"user-owned")
+
+    assert (
+        main(
+            [
+                "concept",
+                "project",
+                "--out",
+                str(out),
+                "--db",
+                str(production_store.db_path),
+                "--json",
+            ]
+        )
+        == 1
+    )
+    payload = _json_output(capsys, error=True)
+
+    assert payload["status"] == "conflict"
+    assert payload["conflicts"] == 1
+    assert payload["writes"] == 0
+    assert payload["out"] == str(out)
+    assert sentinel.read_bytes() == b"user-owned"
+
+
+@pytest.mark.parametrize("status", ("stale_snapshot", "storage_failure"))
+def test_project_cli_maps_retryable_and_storage_failures_to_exit_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status: str,
+) -> None:
+    class FakeReport:
+        def __init__(self) -> None:
+            self.status = status
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "status": status,
+                "selected": 0,
+                "rendered": 0,
+                "unchanged": 0,
+                "created": 0,
+                "replaced": 0,
+                "deleted": 0,
+                "conflicts": 0,
+                "skipped_unavailable": 0,
+                "skipped_retired": 0,
+                "writes": 0,
+                "scope": "unclassified",
+                "project": None,
+                "policy_digest": "0" * 64,
+                "access_instance": "fixture",
+                "access_revision": 0,
+                "logical_state_hash": "0" * 64,
+            }
+
+    class FailingProjectionService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def project(self, _out: Path, *, project: str | None = None) -> FakeReport:
+            assert project is None
+            return FakeReport()
+
+    monkeypatch.setattr(
+        "session_weaver.cli.ConceptService", FailingProjectionService, raising=False
+    )
+    out = tmp_path / f"cli-{status}"
+
+    assert main(["concept", "project", "--out", str(out), "--json"]) == 1
+    payload = _json_output(capsys, error=True)
+    assert payload["status"] == status
+    assert payload["writes"] == 0
+
+
+def test_project_cli_unavailable_project_is_usage_exit_two_without_output(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out = tmp_path / "unavailable-project-output"
+
+    assert (
+        main(
+            [
+                "concept",
+                "project",
+                "--out",
+                str(out),
+                "--project",
+                "not-configured",
+                "--db",
+                str(production_store.db_path),
+                "--json",
+            ]
+        )
+        == 2
+    )
+    payload = _json_output(capsys, error=True)
+    assert payload["errors"][0]["code"] == "project_unavailable"
+    assert payload["writes"] == 0
+    assert not out.exists()
+
+
+def test_project_cli_closes_every_owned_database_connection(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    quote = "projection closure evidence"
+    _capture(production_store, quote, key="projection-closure")
+    ConceptService(production_store.db_path, now=lambda: _NOW).winddown(
+        "fixture-session-1",
+        _winddown_document(quote),
+        actor="fixture-model",
+    )
+    real_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def tracked_connect(database: Any, *args: Any, **kwargs: Any) -> sqlite3.Connection:
+        conn = real_connect(database, *args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+
+    assert (
+        main(
+            [
+                "concept",
+                "project",
+                "--out",
+                str(tmp_path / "closure-projection"),
+                "--db",
+                str(production_store.db_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert opened
+    for conn in opened:
+        _assert_closed(conn)
+
+
+# --- A3b2-fix adversarial review closure: F8 (untested CLI branches), F9 (CLI containment) ---
+
+
+class _FakeProjectionReport:
+    def __init__(self, status: str) -> None:
+        self.status = status
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "selected": 1,
+            "rendered": 1,
+            "unchanged": 1,
+            "created": 0,
+            "replaced": 0,
+            "deleted": 0,
+            "conflicts": 0,
+            "skipped_unavailable": 0,
+            "skipped_retired": 0,
+            "writes": 0,
+            "scope": "unclassified",
+            "project": None,
+            "policy_digest": "0" * 64,
+            "access_instance": "fixture",
+            "access_revision": 0,
+            "logical_state_hash": "0" * 64,
+        }
+
+
+def test_project_cli_default_text_output_reports_key_value_pairs_on_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F8: the default (non-JSON) text-output branch of `concept project` had no
+    test coverage at all; lock in its key=value stdout format on success."""
+
+    class TextProjectionService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def project(self, _out: Path, *, project: str | None = None) -> _FakeProjectionReport:
+            assert project is None
+            return _FakeProjectionReport("ok")
+
+    monkeypatch.setattr("session_weaver.cli.ConceptService", TextProjectionService, raising=False)
+    out = tmp_path / "text-output-projection"
+
+    assert main(["concept", "project", "--out", str(out)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith('command="concept project" ')
+    assert f'out="{out}"' in captured.out
+    assert 'status="ok"' in captured.out
+    assert "selected=1" in captured.out
+
+
+def test_project_cli_default_text_output_failure_goes_to_stderr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F8: the same text-output branch, on a non-ok status, must route to
+    stderr and exit 1, matching the JSON branch's error routing."""
+
+    class TextProjectionService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def project(self, _out: Path, *, project: str | None = None) -> _FakeProjectionReport:
+            return _FakeProjectionReport("conflict")
+
+    monkeypatch.setattr("session_weaver.cli.ConceptService", TextProjectionService, raising=False)
+    out = tmp_path / "text-output-conflict"
+
+    assert main(["concept", "project", "--out", str(out)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert 'status="conflict"' in captured.err
+
+
+def test_project_cli_generic_exception_is_sanitized_runtime_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F8: a non-ScopeError exception from the service (e.g. a schema/storage
+    RuntimeError) must fall through to the generic, sanitized exit-1 envelope,
+    never leaking the exception's own message."""
+
+    class ExplodingService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def project(self, _out: Path, *, project: str | None = None) -> None:
+            raise RuntimeError("PRIVATE INTERNAL DETAIL must not leak")
+
+    monkeypatch.setattr("session_weaver.cli.ConceptService", ExplodingService, raising=False)
+    out = tmp_path / "exploding-projection"
+
+    assert main(["concept", "project", "--out", str(out), "--json"]) == 1
+    payload = _json_output(capsys, error=True)
+    assert payload == {"command": "concept project", "error": "operation failed", "writes": 0}
+    assert "PRIVATE INTERNAL DETAIL" not in json.dumps(payload)
+
+
+def test_project_cli_schema_mismatch_before_first_snapshot_is_sanitized_exit_one(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F9: a schema mismatch detected on the very first snapshot capture (before
+    any output-directory work) has no snapshot to build a ProjectionReport from
+    and is re-raised by the library; the CLI's generic-exception fallback must
+    still contain it as a sanitized exit-1 envelope with no output created."""
+    import session_weaver.concept_schema as concept_schema_module
+
+    monkeypatch.setattr(concept_schema_module, "SCHEMA_FINGERPRINT", "0" * 64)
+    out = tmp_path / "schema-mismatch-cli"
+
+    assert (
+        main(
+            [
+                "concept",
+                "project",
+                "--out",
+                str(out),
+                "--db",
+                str(production_store.db_path),
+                "--json",
+            ]
+        )
+        == 1
+    )
+    payload = _json_output(capsys, error=True)
+    assert payload == {"command": "concept project", "error": "operation failed", "writes": 0}
+    assert not out.exists()

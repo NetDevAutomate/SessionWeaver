@@ -1,0 +1,66 @@
+{
+  "aggregate_projection_sha256": "ccb5ba5cbe34f3b190d886edb20c8162351f0872623603517900a53e2411e098",
+  "captured_at_utc": "2026-09-07T21:24:11Z",
+  "cleanup_ok": true,
+  "evidence_schema": "session-weaver.concept-projection-baseline",
+  "evidence_version": 1,
+  "import_counts": {
+    "excluded_oversized_body_files": 45,
+    "legacy_unbound": 1988,
+    "parsed": 1988,
+    "scanned": 1990
+  },
+  "okf_source_sentinel_unchanged": true,
+  "projection": {
+    "post_retire": {
+      "conflicts": 0,
+      "created": 0,
+      "deleted": 1,
+      "rendered": 1987,
+      "replaced": 0,
+      "selected": 1987,
+      "skipped_retired": 1,
+      "skipped_unavailable": 0,
+      "unchanged": 1987
+    },
+    "run1": {
+      "conflicts": 0,
+      "created": 1988,
+      "deleted": 0,
+      "rendered": 1988,
+      "replaced": 0,
+      "selected": 1988,
+      "skipped_retired": 0,
+      "skipped_unavailable": 0,
+      "unchanged": 0
+    },
+    "run2": {
+      "conflicts": 0,
+      "created": 0,
+      "deleted": 0,
+      "rendered": 1988,
+      "replaced": 0,
+      "selected": 1988,
+      "skipped_retired": 0,
+      "skipped_unavailable": 0,
+      "unchanged": 1988
+    }
+  },
+  "source": {
+    "message_count": 137453,
+    "okf_markdown_files": 2035,
+    "session_count": 5802
+  },
+  "source_sentinels_unchanged": true,
+  "timings_seconds": {
+    "okf_import": 52.137594,
+    "post_retire": 0.999906,
+    "run1": 1.36683,
+    "run2": 1.003833
+  },
+  "trust_labels": {
+    "absent": 1988,
+    "machine_confirmed": 0,
+    "model_proposed": 1988
+  }
+}

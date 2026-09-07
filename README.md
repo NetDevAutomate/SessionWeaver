@@ -51,6 +51,7 @@ session-weaver concept accept CONCEPT_ID --reason "reviewed"
 session-weaver concept retire CONCEPT_ID --reason "obsolete"
 session-weaver concept bind LEGACY_ID --from binding.json --reason "exact evidence"
 session-weaver concept import-okf /path/to/okf --dry-run --report -
+session-weaver concept project --out DIR [--project ID] [--db PATH] [--json]
 ```
 
 Concept writes target the same SQLite database as the session tools and return
@@ -66,9 +67,27 @@ ambiguity, no visible evidence, and oversized citation bodies remain unbound. So
 traversal and report replacement are anchored to securely opened directory descriptors;
 if report delivery fails after commit, the CLI returns exit 1 with truthful committed
 write counters. `--dry-run` performs the same classification with zero writes, and
-repeated imports add no rows or events. Projection remains deliberately out of scope. The
-sanitized disposable-copy receipt, including all 2,033 imported records, is
+repeated imports add no rows or events. The sanitized disposable-copy receipt, including
+all 2,033 imported records, is
 [`legacy-okf-import-baseline.json`](docs/data/legacy-okf-import-baseline.json).
+
+`concept project --out DIR` rebuilds disposable, scope-authorized Markdown from
+authoritative concept state; it never writes database truth and never promotes trust.
+One output directory is owned by exactly one scope/project selector through a
+non-symlink `.session-weaver-projection.json` marker, and a
+`.session-weaver-projection-manifest.json` binds every generated filename to its concept
+ID and exact byte SHA-256. A previously-generated file is only ever deleted as stale
+when all five conditions hold: it is listed in the prior valid manifest, its name matches
+the generated-filename grammar, its embedded ownership marker matches the manifest's
+concept ID, its current byte SHA-256 still equals the manifest's, and it is a regular,
+non-symlink file opened through the held output-directory descriptor. Any other
+unowned or externally modified file is preserved and reported as a conflict, never
+deleted. Two invocations racing on the same `--out` fail closed: whichever one observes
+the other's marker/manifest mid-publication reports a conflict rather than corrupting
+either run; there is no lock. Every rendered file carries honest frontmatter —
+`model_authorship: model-proposed` always, and `citation_binding: machine-confirmed`
+only for bound roots (`absent` for legacy-unbound roots) — so a reader can tell
+model-proposed interpretation from machine-confirmed citation binding at a glance.
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a

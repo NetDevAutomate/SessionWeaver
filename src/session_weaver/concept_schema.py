@@ -440,6 +440,26 @@ def _verify_clock(conn: sqlite3.Connection) -> None:
         raise RuntimeError("Concept clock counters are invalid")
 
 
+def verify_installed_schema(conn: sqlite3.Connection) -> None:
+    """Verify an already-installed sidecar schema is exact, read-only, no mutation.
+
+    Shared by ``_ensure_schema``'s existing-table branch and by projection's
+    read-only callers so both agree on exactly one verification sequence.
+    """
+    upstream = conn.execute("PRAGMA user_version").fetchone()[0]
+    if upstream != UPSTREAM_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Unsupported upstream schema v{upstream}; expected v{UPSTREAM_SCHEMA_VERSION}"
+        )
+    _verify_objects(conn)
+    marker = conn.execute(
+        "SELECT schema_version,schema_fingerprint FROM context_concept_schema WHERE id=1"
+    ).fetchone()
+    if marker is None or tuple(marker) != (SCHEMA_VERSION, SCHEMA_FINGERPRINT):
+        raise RuntimeError("Concept schema version/fingerprint mismatch")
+    _verify_clock(conn)
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     """Install, exactly adopt, or verify sidecar v1 without changing user_version."""
     if conn.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
@@ -473,13 +493,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         payload_complete, payload_exact = _objects_match(conn, _PAYLOAD_OBJECTS)
         payload_present = bool(_object_rows(conn, _PAYLOAD_OBJECTS))
         if metadata_present:
-            _verify_objects(conn)
-            marker = conn.execute(
-                "SELECT schema_version,schema_fingerprint FROM context_concept_schema WHERE id=1"
-            ).fetchone()
-            if marker is None or tuple(marker) != (SCHEMA_VERSION, SCHEMA_FINGERPRINT):
-                raise RuntimeError("Concept schema version/fingerprint mismatch")
-            _verify_clock(conn)
+            verify_installed_schema(conn)
             return
         if payload_complete and payload_exact:
             _create_objects(conn, _METADATA_OBJECTS)

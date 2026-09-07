@@ -23,6 +23,7 @@ from .harnesses import HARNESSES, parse_harness_selection
 from .installer import install_skill, status, uninstall_skill
 from .okf import ImportReport
 from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
+from .projection import ProjectionReport
 from .safe_fs import _FILE_CREATE_FLAGS, _open_directory_nofollow
 from .winddown import MAX_REQUEST_BYTES, _Issue
 
@@ -163,6 +164,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("--report", default=None, type=_nonempty_type("--report"))
     p_import.add_argument("--dry-run", action="store_true")
     _concept_common_args(p_import, default_actor=_DEFAULT_IMPORT_ACTOR)
+
+    p_project = concept_sub.add_parser(
+        "project", help="rebuild disposable scope-authorized Markdown"
+    )
+    p_project.add_argument("--out", required=True, type=_nonempty_type("--out"))
+    p_project.add_argument("--project", default=None, type=_nonempty_type("--project"))
+    p_project.add_argument("--json", action="store_true", help="emit deterministic JSON")
+    _db_arg(p_project)
     return parser
 
 
@@ -512,6 +521,37 @@ def _concept_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _projection_payload(args: argparse.Namespace, report: ProjectionReport) -> dict[str, Any]:
+    return {
+        "command": "concept project",
+        "out": args.out,
+        **report.to_dict(),
+    }
+
+
+def _concept_project(args: argparse.Namespace) -> int:
+    try:
+        service = ConceptService(_database_path(args.db), prepare_schema=False)
+        report = service.project(Path(args.out).expanduser(), project=args.project)
+    except ScopeError:
+        return _scope_failure("concept project", project=args.project)
+    except Exception:
+        return _runtime_failure("concept project")
+    payload = _projection_payload(args, report)
+    failed = report.status != "ok"
+    if args.json:
+        _emit_json(payload, error=failed)
+    else:
+        print(
+            " ".join(
+                f"{key}={json.dumps(value, ensure_ascii=False, sort_keys=True)}"
+                for key, value in payload.items()
+            ),
+            file=sys.stderr if failed else sys.stdout,
+        )
+    return 1 if failed else 0
+
+
 def _ontology_rebuild(db_arg: str | None, *, incremental: bool) -> int:
     started = perf_counter()
     try:
@@ -628,6 +668,8 @@ def main(argv: list[str] | None = None) -> int:
             return _concept_transition(args)
         if args.concept_command == "bind":
             return _concept_bind(args)
+        if args.concept_command == "project":
+            return _concept_project(args)
         return _concept_import(args)
 
     try:

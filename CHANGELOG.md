@@ -35,6 +35,15 @@ may change before `1.0.0`.
   safe-YAML parsing, immutable byte identities, full-body conservative binding,
   deterministic content-free reports, dry-run parity, one-transaction writes,
   idempotent re-import, and atomic report files.
+- Added `session-weaver concept project --out DIR [--project ID] [--db PATH]
+  [--json]` and the `ConceptService.project` seam: a scope-authorized,
+  deterministic Markdown projection rebuilt from authoritative concept state.
+  Output ownership is scoped to one directory via a non-symlink marker and a
+  manifest binding generated filenames to concept ID and exact byte SHA-256;
+  stale managed files are removed only under a strict five-condition rule, and
+  every write is descriptor-anchored, symlink-refusing, and atomic. Projection
+  never writes DB truth, never promotes trust, and never mutates or rolls back
+  concept state on failure.
 
 ### Fixed
 

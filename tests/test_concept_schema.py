@@ -14,9 +14,11 @@ from agent_session_tools.migrations import CURRENT_VERSION
 from session_weaver.concept_schema import (
     SCHEMA_FINGERPRINT,
     SCHEMA_VERSION,
+    UPSTREAM_SCHEMA_VERSION,
     _ensure_schema,
     _fts_consistency,
     _rebuild_fts,
+    verify_installed_schema,
 )
 
 
@@ -402,3 +404,36 @@ def test_sidecar_v2_allows_null_session_only_for_unavailable_legacy_roots(
             )
 
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_verify_installed_schema_rejects_unsupported_upstream_version(
+    production_store: ProductionStore,
+) -> None:
+    """F9: the shared, read-only verifier used by both _ensure_schema and
+    projection.py must reject a PRAGMA user_version drift, not just the copy
+    that used to live in projection.py."""
+    conn = production_store.conn
+    _ensure_schema(conn)
+    conn.execute(f"PRAGMA user_version={UPSTREAM_SCHEMA_VERSION + 1}")
+
+    try:
+        with pytest.raises(RuntimeError, match="Unsupported upstream schema"):
+            verify_installed_schema(conn)
+    finally:
+        conn.execute(f"PRAGMA user_version={UPSTREAM_SCHEMA_VERSION}")
+
+
+def test_verify_installed_schema_rejects_marker_mismatch(
+    production_store: ProductionStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F9: the shared verifier must reject a schema_version/schema_fingerprint
+    marker that no longer matches this module's constants."""
+    import session_weaver.concept_schema as concept_schema_module
+
+    conn = production_store.conn
+    _ensure_schema(conn)
+    monkeypatch.setattr(concept_schema_module, "SCHEMA_FINGERPRINT", "0" * 64)
+
+    with pytest.raises(RuntimeError, match="mismatch"):
+        verify_installed_schema(conn)

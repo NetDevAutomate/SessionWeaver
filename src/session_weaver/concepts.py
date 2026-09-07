@@ -26,6 +26,7 @@ from .okf import (
     _scan_okf,
 )
 from .okf import ImportError as OKFImportError
+from .projection import ProjectionReport, project_concepts
 from .winddown import (
     _Concept,
     _Issue,
@@ -595,6 +596,15 @@ class ConceptService:
             if issue:
                 issues.append(issue)
         return tuple(issues)
+
+    def project(
+        self,
+        out: Path,
+        *,
+        project: str | None = None,
+    ) -> ProjectionReport:
+        """Rebuild disposable Markdown from scope-authorized concept state."""
+        return project_concepts(self._db, out, project=project)
 
     def winddown(
         self,
