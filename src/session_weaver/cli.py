@@ -574,8 +574,8 @@ def _concept_project(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def _recall_payload(report: RecallReport) -> dict[str, Any]:
-    return {"command": "recall", **report.to_dict()}
+def _recall_payload(report: RecallReport) -> dict[str, object]:
+    return report.to_dict()
 
 
 def _print_recall_text(report: RecallReport) -> None:

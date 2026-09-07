@@ -51,7 +51,6 @@ STOP = frozenset(
 
 _TERM = re.compile(r"[a-zA-Z0-9_./-]+")
 _CONCEPT_FTS_LIMIT = 200
-_SESSION_FTS_LIMIT = 300
 _PROVENANCE_BOUND = "machine-confirmed citation"
 _PROVENANCE_LEGACY = "legacy-unbound (session-level provenance)"
 
@@ -206,15 +205,21 @@ def _concept_hit(authorized: AuthorizedConcept) -> ConceptHit:
     )
 
 
-def _fts_ranked_concept_ids(conn: sqlite3.Connection, query: str) -> list[str]:
+def _fts_ranked_concept_ids(
+    conn: sqlite3.Connection,
+    query: str,
+    *,
+    limit: int = _CONCEPT_FTS_LIMIT,
+    offset: int = 0,
+) -> list[str]:
     if not query:
         return []
     rows = conn.execute(
         "SELECT concept_id FROM context_concept_fts"
         " WHERE context_concept_fts MATCH ?"
         " ORDER BY bm25(context_concept_fts), concept_id"
-        " LIMIT ?",
-        (query, _CONCEPT_FTS_LIMIT),
+        " LIMIT ? OFFSET ?",
+        (query, limit, offset),
     ).fetchall()
     return [cast(str, row[0]) for row in rows]
 
@@ -234,17 +239,25 @@ def _select_concepts(
     for query, is_fallback in ((and_query, False), (or_query, True)):
         if not query or len(selected) >= k:
             continue
-        for concept_id in _fts_ranked_concept_ids(conn, query):
-            if concept_id in seen:
-                continue
-            seen.add(concept_id)
-            authorized = authorized_by_id.get(concept_id)
-            if authorized is None:
-                continue
-            selected.append(_concept_hit(authorized))
-            if is_fallback:
-                fallback_used = True
-            if len(selected) == k:
+        offset = 0
+        while len(selected) < k:
+            ranked_ids = _fts_ranked_concept_ids(conn, query, offset=offset)
+            if not ranked_ids:
+                break
+            offset += len(ranked_ids)
+            for concept_id in ranked_ids:
+                if concept_id in seen:
+                    continue
+                seen.add(concept_id)
+                authorized = authorized_by_id.get(concept_id)
+                if authorized is None:
+                    continue
+                selected.append(_concept_hit(authorized))
+                if is_fallback:
+                    fallback_used = True
+                if len(selected) == k:
+                    break
+            if len(ranked_ids) < _CONCEPT_FTS_LIMIT:
                 break
     return tuple(selected), fallback_used
 
@@ -270,33 +283,52 @@ def _select_sessions(
         context.conn, "s.id", policy=context.policy, scope=context.scope
     )
     project_clause, project_params = _project_clause(context)
-    sql = (
-        "SELECT m.session_id, s.source, s.project_path, s.updated_at,"
-        " substr(m.content,1,300)"
-        " FROM messages_fts"
-        " JOIN messages m ON m.rowid=messages_fts.rowid"
-        " JOIN sessions s ON s.id=m.session_id"
-        f" WHERE messages_fts MATCH ? AND {visibility_clause}{project_clause}"
-        " ORDER BY bm25(messages_fts), m.timestamp DESC"
-        " LIMIT ?"
-    )
     selected: list[SessionHit] = []
     seen: set[str] = set(exclude_session_ids)
     fallback_used = False
     for query, is_fallback in ((and_query, False), (or_query, True)):
         if not query or len(selected) >= k:
             continue
-        try:
-            rows = context.conn.execute(
-                sql,
-                (query, *visibility_params, *project_params, _SESSION_FTS_LIMIT),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            continue
+        excluded = tuple(sorted(seen))
+        exclusion_clause = ""
+        if excluded:
+            placeholders = ",".join("?" for _ in excluded)
+            exclusion_clause = f" AND m.session_id NOT IN ({placeholders})"
+        sql = (
+            "WITH ranked_messages AS ("
+            " SELECT m.id AS message_id, m.session_id, s.source, s.project_path,"
+            " s.updated_at, substr(m.content,1,300) AS preview,"
+            " m.timestamp AS message_timestamp, bm25(messages_fts) AS match_rank"
+            " FROM messages_fts"
+            " JOIN messages m ON m.rowid=messages_fts.rowid"
+            " JOIN sessions s ON s.id=m.session_id"
+            f" WHERE messages_fts MATCH ? AND {visibility_clause}{project_clause}"
+            f"{exclusion_clause}"
+            "), best_messages AS ("
+            " SELECT *, row_number() OVER ("
+            " PARTITION BY session_id"
+            " ORDER BY match_rank, message_timestamp DESC, message_id"
+            " ) AS session_position"
+            " FROM ranked_messages"
+            ")"
+            " SELECT session_id, source, project_path, updated_at, preview"
+            " FROM best_messages"
+            " WHERE session_position=1"
+            " ORDER BY match_rank, message_timestamp DESC, session_id, message_id"
+            " LIMIT ?"
+        )
+        rows = context.conn.execute(
+            sql,
+            (
+                query,
+                *visibility_params,
+                *project_params,
+                *excluded,
+                k - len(selected),
+            ),
+        ).fetchall()
         for session_id, source, project_path, updated_at, preview in rows:
-            if session_id in seen:
-                continue
-            seen.add(session_id)
+            seen.add(cast(str, session_id))
             selected.append(
                 SessionHit(
                     session_id=cast(str, session_id),
@@ -308,8 +340,6 @@ def _select_sessions(
             )
             if is_fallback:
                 fallback_used = True
-            if len(selected) == k:
-                break
     return tuple(selected), fallback_used
 
 

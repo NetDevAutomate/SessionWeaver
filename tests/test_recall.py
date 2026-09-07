@@ -829,9 +829,8 @@ def test_recall_cli_json_output_matches_the_contract(
     assert main(["recall", "clicontractterm", "--db", str(production_store.db_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["command"] == "recall"
     schema = json.loads(_CONTRACT_PATH.read_text(encoding="utf-8"))
-    _validate(schema, {key: value for key, value in payload.items() if key != "command"})
+    _validate(schema, payload)
 
 
 def test_recall_cli_default_text_output_lists_concepts_then_sessions(

@@ -175,9 +175,18 @@ def _require_newest_visible_hit(*, concepts: int, sessions: int) -> None:
     )
 
 
+def _require_okf_source_unchanged(unchanged: bool) -> None:
+    assert unchanged is True, "OKF source tree changed during live recall smoke"
+
+
 def test_newest_visible_retrieval_failure_is_a_hard_failure() -> None:
     with pytest.raises(AssertionError, match="newest visible session project basename"):
         _require_newest_visible_hit(concepts=0, sessions=0)
+
+
+def test_okf_source_mutation_is_a_hard_failure() -> None:
+    with pytest.raises(AssertionError, match="OKF source tree changed"):
+        _require_okf_source_unchanged(False)
 
 
 @pytest.mark.live
@@ -298,6 +307,7 @@ def test_real_corpus_recall_smoke() -> None:
     _validate_baseline_schema(evidence)
     assert evidence["cleanup_ok"] is True
     assert evidence["source_sentinels_unchanged"] is True
+    _require_okf_source_unchanged(evidence["okf_source_sentinel_unchanged"])
 
     baseline_path = (
         Path(__file__).resolve().parent.parent / "docs" / "data" / "recall-smoke-baseline.json"
