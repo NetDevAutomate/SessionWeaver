@@ -123,3 +123,11 @@ is the Phase 1 standalone packaging of that work. Production source of truth:
 [StudyLoop](https://github.com/NetDevAutomate/StudyLoop) · site:
 [studyloop.dev](https://www.studyloop.dev/). Costs are in the LiteLLM ledger (runs
 `…-wpp3-ontology`, `…-t2-winddown`, `…-phase0-gate`).
+
+## Contributing, conduct, security, license
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). This project follows
+the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md); report security concerns privately
+per [SECURITY.md](SECURITY.md). Changes are recorded in [CHANGELOG.md](CHANGELOG.md);
+third-party attributions in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+MIT licensed — see [LICENSE](LICENSE).
