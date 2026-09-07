@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SessionWeaver Before Phase 2",
+    "quality_profile": "showcase",
+    "output": "phase2-before.html",
+    "repository": {
+      "url": "https://github.com/NetDevAutomate/SessionWeaver",
+      "revision": "302195e8dd65945ac4f1710c388280124eb38cdb"
+    },
+    "viewBox": [1390, 810],
+    "views": [
+      {
+        "id": "skill-install",
+        "label": "Skill installation",
+        "focus": ["operator", "weaverCli", "installer", "skillAsset", "harnesses"],
+        "note": "The standalone package installs one canonical skill into all six supported harnesses."
+      },
+      {
+        "id": "tool-reexports",
+        "label": "Tool re-exports",
+        "focus": ["operator", "toolLaunchers", "agentTools", "sessionDb"],
+        "note": "Six console entry points delegate to the pinned agent-session-tools dependency."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator or agent",
+      "sublabel": "Runs installed commands",
+      "pos": [40, 390],
+      "size": [170, 68]
+    },
+    {
+      "id": "weaverCli",
+      "type": "backend",
+      "label": "session-weaver CLI",
+      "sublabel": "install · uninstall · status · doctor",
+      "sources": [{"path": "src/session_weaver/cli.py", "label": "CLI commands"}],
+      "pos": [340, 230],
+      "size": [210, 72]
+    },
+    {
+      "id": "installer",
+      "type": "backend",
+      "label": "Skill installer",
+      "sublabel": "hub copy · symlink or copy",
+      "sources": [{"path": "src/session_weaver/installer.py", "label": "Installer"}],
+      "pos": [730, 230],
+      "size": [190, 72]
+    },
+    {
+      "id": "skillAsset",
+      "type": "external",
+      "label": "Packaged SKILL.md",
+      "sublabel": "session_weaver/data/skills",
+      "sources": [
+        {
+          "path": "src/session_weaver/data/skills/session-weaver/SKILL.md",
+          "label": "Packaged skill"
+        }
+      ],
+      "pos": [725, 60],
+      "size": [200, 70]
+    },
+    {
+      "id": "harnesses",
+      "type": "external",
+      "label": "Six harness targets",
+      "sublabel": "Claude · Codex · Kiro · OpenCode · pi · Grok",
+      "sources": [{"path": "src/session_weaver/harnesses.py", "label": "Harness registry"}],
+      "pos": [1070, 230],
+      "size": [270, 72]
+    },
+    {
+      "id": "toolLaunchers",
+      "type": "backend",
+      "label": "Six re-exported CLIs",
+      "sublabel": "context · export · repair · query · maint · sync",
+      "sources": [{"path": "pyproject.toml", "label": "Console scripts"}],
+      "pos": [340, 540],
+      "size": [320, 76]
+    },
+    {
+      "id": "agentTools",
+      "type": "external",
+      "label": "agent-session-tools",
+      "sublabel": "Pinned StudyLoop commit c8315ccb",
+      "sources": [{"path": "pyproject.toml", "label": "Pinned dependency"}],
+      "pos": [790, 540],
+      "size": [240, 76]
+    },
+    {
+      "id": "sessionDb",
+      "type": "database",
+      "label": "sessions.db",
+      "sublabel": "Session and context memory",
+      "sources": [{"path": "README.md", "label": "Store contract"}],
+      "pos": [1150, 540],
+      "size": [190, 76]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "session-weaver 0.1 distribution",
+      "wraps": ["weaverCli", "installer", "skillAsset", "toolLaunchers", "agentTools"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operatorCommands",
+      "from": "operator",
+      "to": "weaverCli",
+      "label": "session-weaver",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cliDelegates",
+      "from": "weaverCli",
+      "to": "installer",
+      "label": "install · uninstall · status"
+    },
+    {
+      "id": "installerReadsSkill",
+      "from": "skillAsset",
+      "to": "installer",
+      "label": "read packaged bytes",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [825, 170]
+    },
+    {
+      "id": "installerWritesTargets",
+      "from": "installer",
+      "to": "harnesses",
+      "label": "hub, symlink or copy"
+    },
+    {
+      "id": "operatorRunsTools",
+      "from": "operator",
+      "to": "toolLaunchers",
+      "label": "six console commands",
+      "variant": "emphasis"
+    },
+    {
+      "id": "launchersDelegate",
+      "from": "toolLaunchers",
+      "to": "agentTools",
+      "label": "entry-point delegation"
+    },
+    {
+      "id": "toolsUseDatabase",
+      "from": "agentTools",
+      "to": "sessionDb",
+      "label": "read / write"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Maintained here",
+      "items": [
+        "Skill installation and removal",
+        "Environment doctor",
+        "Console-entry-point packaging"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Delegated upstream",
+      "items": [
+        "Session capture and query behavior",
+        "Database schema, repair, maintenance and sync"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Not yet a product surface",
+      "items": [
+        "No maintained ontology module",
+        "No concept lifecycle or wind-down command",
+        "No dedicated memory_recall or benchmark gate"
+      ]
+    }
+  ]
+}

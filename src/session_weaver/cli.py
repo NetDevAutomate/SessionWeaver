@@ -65,12 +65,13 @@ def build_parser() -> argparse.ArgumentParser:
 def _doctor(db_arg: str | None) -> int:
     import shutil as _shutil
     import sqlite3
+    from contextlib import closing
 
     db = Path(db_arg) if db_arg else Path.home() / ".config/studyloop/sessions.db"
     failures = 0
     if db.is_file():
         try:
-            with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+            with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as conn:
                 sessions, messages = (
                     conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0],
                     conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],

@@ -57,7 +57,11 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib --cov=src/session_weaver --cov-fail-under=90 -m 'not live'"
+markers = [
+    "integration: exercises multiple maintained components with isolated resources",
+    "live: uses only a SQLite Online Backup copy of the real database under /tmp; deselected by default",
+]
 
 [tool.ruff]
 line-length = 100

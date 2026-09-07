@@ -1,12 +1,19 @@
 """Doctor: the environment check against real (temporary) stores."""
 
+from __future__ import annotations
+
 import sqlite3
+from contextlib import closing
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 from session_weaver.cli import main
 
 
-def _make_store(path):
-    with sqlite3.connect(path) as conn:
+def _make_store(path: Path) -> None:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
         conn.execute("CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT)")
         conn.execute("INSERT INTO sessions VALUES ('s1')")
@@ -25,6 +32,35 @@ def test_doctor_reads_a_healthy_store(tmp_path, capsys, monkeypatch):
     assert "1 sessions / 1 messages" in out
     assert "session-export not on PATH" in out
     assert rc == 1  # missing tools still fail the check
+
+
+def test_doctor_closes_its_read_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "sessions.db"
+    _make_store(db)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    real_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def tracked_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+
+    rc = main(["doctor", "--db", str(db)])
+
+    assert rc == 1
+    assert len(opened) == 1
+    conn = opened[0]
+    try:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            conn.execute("SELECT 1")
+    finally:
+        conn.close()
 
 
 def test_doctor_reports_unreadable_store(tmp_path, capsys, monkeypatch):
