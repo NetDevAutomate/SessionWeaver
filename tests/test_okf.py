@@ -893,6 +893,77 @@ def test_source_intermediate_directory_swap_is_rejected_at_descriptor_open(
     assert "PRIVATE-SWAPPED-RECORD" not in json.dumps(scan.report.to_dict())
 
 
+def test_root_enumeration_failure_aborts_scan_and_closes_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import session_weaver.okf as okf_module
+
+    root = tmp_path / "okf-root-list-failure"
+    root.mkdir()
+    _write(root, "concept.md", _okf_bytes())
+    private_detail = "PRIVATE-ROOT-LIST-DETAIL"
+    opened_descriptors: list[int] = []
+    real_open = okf_module._open_directory_nofollow
+    real_listdir = okf_module.os.listdir
+
+    def track_root_open(path: Path) -> int:
+        descriptor = real_open(path)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_root_listdir(descriptor: int) -> list[str]:
+        if opened_descriptors and descriptor == opened_descriptors[0]:
+            raise OSError(private_detail)
+        return real_listdir(descriptor)
+
+    monkeypatch.setattr(okf_module, "_open_directory_nofollow", track_root_open)
+    monkeypatch.setattr(okf_module.os, "listdir", fail_root_listdir)
+
+    with pytest.raises(ValueError) as failure:
+        okf_module._scan_okf(root)
+
+    assert str(failure.value) == "OKF tree could not be enumerated safely"
+    assert private_detail not in str(failure.value)
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        okf_module.os.fstat(opened_descriptors[0])
+
+
+def test_intermediate_directory_removed_before_stat_aborts_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import session_weaver.okf as okf_module
+
+    root = tmp_path / "okf-pre-stat-removal"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    _write(nested, "concept.md", _okf_bytes())
+    removed = tmp_path / "removed-nested"
+    private_detail = "PRIVATE-PRE-STAT-DETAIL"
+    real_stat = okf_module.os.stat
+    removed_before_stat = False
+
+    def remove_before_stat(*args: Any, **kwargs: Any) -> Any:
+        nonlocal removed_before_stat
+        if not removed_before_stat and args[0] == "nested" and kwargs.get("dir_fd") is not None:
+            nested.rename(removed)
+            removed_before_stat = True
+            raise OSError(private_detail)
+        return real_stat(*args, **kwargs)
+
+    monkeypatch.setattr(okf_module.os, "stat", remove_before_stat)
+
+    with pytest.raises(ValueError) as failure:
+        okf_module._scan_okf(root)
+
+    assert removed_before_stat is True
+    assert str(failure.value) == "OKF tree could not be enumerated safely"
+    assert private_detail not in str(failure.value)
+    assert (removed / "concept.md").is_file()
+
+
 @pytest.mark.parametrize(
     ("actor", "project", "field"),
     [

@@ -218,29 +218,15 @@ def _candidate_paths(root_descriptor: int) -> list[_SourceCandidate]:
     candidates: list[_SourceCandidate] = []
 
     def walk(descriptor: int, prefix: str) -> None:
-        try:
-            names = os.listdir(descriptor)
-        except OSError:
-            if prefix:
-                candidates.append(_SourceCandidate(prefix, unsafe=True))
-            return
+        names = os.listdir(descriptor)
         for name in sorted(names, key=lambda value: value.encode("utf-8", "surrogateescape")):
             relative_path = f"{prefix}/{name}" if prefix else name
-            try:
-                metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-            except OSError:
-                if name.endswith(".md"):
-                    candidates.append(_SourceCandidate(relative_path, unsafe=True))
-                continue
+            metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
             mode = metadata.st_mode
             if stat.S_ISLNK(mode):
                 candidates.append(_SourceCandidate(relative_path, unsafe=True))
             elif stat.S_ISDIR(mode):
-                try:
-                    child = os.open(name, _DIRECTORY_OPEN_FLAGS, dir_fd=descriptor)
-                except OSError:
-                    candidates.append(_SourceCandidate(relative_path, unsafe=True))
-                    continue
+                child = os.open(name, _DIRECTORY_OPEN_FLAGS, dir_fd=descriptor)
                 try:
                     walk(child, relative_path)
                 finally:
@@ -615,6 +601,9 @@ def _scan_okf(root: Path) -> _OKFScan:
     except OSError as exc:
         raise ValueError("OKF root must be a non-symlink directory") from exc
     try:
-        return _scan_open_okf(root_descriptor)
+        try:
+            return _scan_open_okf(root_descriptor)
+        except OSError:
+            raise ValueError("OKF tree could not be enumerated safely") from None
     finally:
         os.close(root_descriptor)
