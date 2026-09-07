@@ -46,7 +46,22 @@ session-weaver doctor                     # check the session store + ontology +
 session-weaver ontology rebuild           # full rebuild of the default store
 session-weaver ontology rebuild --incremental
 session-weaver ontology status            # strictly read-only health diagnostics
+session-weaver winddown --session ID --from winddown.json
+session-weaver concept accept CONCEPT_ID --reason "reviewed"
+session-weaver concept retire CONCEPT_ID --reason "obsolete"
+session-weaver concept bind LEGACY_ID --from binding.json --reason "exact evidence"
+session-weaver concept import-okf /path/to/okf --dry-run --report -
 ```
+
+Concept writes target the same SQLite database as the session tools and return
+content-free structured JSON. Legacy OKF import is recursive and deterministic: every
+valid file starts as `legacy-unbound`; the historical `machine-confirmed` label never
+becomes acceptance. Only one literal occurrence of the **full Markdown body** in
+scope-visible evidence creates a new proposed bound successor. Zero matches, ambiguity,
+missing/hidden evidence, and oversized citation bodies remain unbound. `--dry-run`
+performs the same classification with zero writes, and repeated imports add no rows or
+events. Projection remains deliberately out of scope. The sanitized disposable-copy receipt
+is [`legacy-okf-import-baseline.json`](docs/data/legacy-okf-import-baseline.json).
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a

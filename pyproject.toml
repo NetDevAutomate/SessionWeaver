@@ -17,6 +17,7 @@ dependencies = [
     # source of truth this repo deliberately does NOT fork. Pinned to a commit
     # so `uv tool install` from this repo is reproducible; bump deliberately.
     "agent-session-tools @ git+https://github.com/NetDevAutomate/StudyLoop.git@c8315ccb74a7255446396fe616dddd684e1b0d14#subdirectory=packages/agent-session-tools",
+    "PyYAML==6.0.3",
 ]
 
 [project.urls]

@@ -31,8 +31,20 @@ may change before `1.0.0`.
   wind-down validation, exact scope-visible evidence binding, immutable bound and
   legacy roots, append-only deterministic lifecycle events, atomic legacy binding,
   and derived concept FTS consistency/rebuild support.
+- Added the complete concept-write CLI and recursive legacy OKF importer: strict
+  safe-YAML parsing, immutable byte identities, full-body conservative binding,
+  deterministic content-free reports, dry-run parity, one-transaction writes,
+  idempotent re-import, and atomic report files.
 
 ### Fixed
+
+- Made concept schema verification independent of SQLite row factories so the
+  reviewed sidecar can be verified inside an `open_context` transaction.
+- Closed temporary report descriptors when atomic report setup fails before file
+  ownership transfers to the stream wrapper.
+- Normalized valid JSON-escaped surrogate pairs from legacy YAML into Unicode
+  scalars, rejected lone surrogates, and aligned legacy title validation with the
+  frozen writer's actual 120-code-point limit rather than its prompt wording.
 
 - Closed direct-SQL concept integrity gaps: bound roots now retain exact citation
   closure, lifecycle counters reject non-integer and exhausted values, legacy-bound

@@ -466,7 +466,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             marker = conn.execute(
                 "SELECT schema_version,schema_fingerprint FROM context_concept_schema WHERE id=1"
             ).fetchone()
-            if marker != (SCHEMA_VERSION, SCHEMA_FINGERPRINT):
+            if marker is None or tuple(marker) != (SCHEMA_VERSION, SCHEMA_FINGERPRINT):
                 raise RuntimeError("Concept schema version/fingerprint mismatch")
             _verify_clock(conn)
             return

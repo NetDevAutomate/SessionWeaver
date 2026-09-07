@@ -1302,6 +1302,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-session-tools" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -1312,7 +1313,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agent-session-tools", git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=c8315ccb74a7255446396fe616dddd684e1b0d14" }]
+requires-dist = [
+    { name = "agent-session-tools", git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=c8315ccb74a7255446396fe616dddd684e1b0d14" },
+    { name = "pyyaml", specifier = "==6.0.3" },
+]
 
 [package.metadata.requires-dev]
 dev = [

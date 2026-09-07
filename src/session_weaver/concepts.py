@@ -13,9 +13,11 @@ from typing import Any, Literal, cast
 
 from agent_session_tools.config_loader import get_db_path, load_config
 from agent_session_tools.context.public import AgentContext, open_context
-from agent_session_tools.context.scope import visibility_sql
+from agent_session_tools.context.scope import ScopeError, visibility_sql
 
 from .concept_schema import _MAX_COUNTER, _ensure_schema
+from .okf import MAX_ERROR_ENTRIES, ImportReport, _OKFRecord, _scan_okf
+from .okf import ImportError as OKFImportError
 from .winddown import (
     _Concept,
     _Issue,
@@ -373,8 +375,9 @@ class _ConceptRepository:
         source_session_id: str,
         source_uri: str,
         producer: str,
+        event_actor: str | None = None,
     ) -> str:
-        """Private pre-seed seam for A3a tests and the later A3b importer."""
+        """Insert one immutable legacy root and its initial proposed event."""
         if not isinstance(original_bytes, bytes):
             raise ValueError("Legacy identity requires original file bytes")
         digest = hashlib.sha256(original_bytes).hexdigest()
@@ -404,7 +407,7 @@ class _ConceptRepository:
             concept_id=identity,
             parent_event_id=None,
             standing="proposed",
-            actor=producer,
+            actor=event_actor or producer,
             reason="legacy import",
         )
         return identity
@@ -510,10 +513,12 @@ class ConceptService:
         db: Path | None = None,
         *,
         now: Callable[[], str] | None = None,
+        prepare_schema: bool = True,
     ) -> None:
         self._db = (db or get_db_path(load_config())).expanduser().resolve()
         self._now = now or globals()["_now"]
-        self._prepare_schema()
+        if prepare_schema:
+            self._prepare_schema()
 
     def _prepare_schema(self) -> None:
         from agent_session_tools.context.managed_history import require_query_target
@@ -568,6 +573,7 @@ class ConceptService:
         if not concepts:
             return BatchResult(writes=0)
         with open_context(self._db, write=True, project=project) as context:
+            _ensure_schema(context.conn)
             repository = _ConceptRepository(context.conn, now=self._now)
             resolver = _EvidenceResolver(context, session_id)
             resolved: list[tuple[_Concept, tuple[dict[str, object], ...]]] = []
@@ -628,6 +634,7 @@ class ConceptService:
         if issues:
             return TransitionResult(writes=0, concept_id=concept_id, errors=tuple(issues))
         with open_context(self._db, write=True, project=project) as context:
+            _ensure_schema(context.conn)
             repository = _ConceptRepository(context.conn, now=self._now)
             root = repository.authorized_root(context, concept_id)
             if root is None:
@@ -697,6 +704,65 @@ class ConceptService:
                 event_id=event_id,
             )
 
+    def _bind_resolved_legacy(
+        self,
+        *,
+        context: AgentContext,
+        repository: _ConceptRepository,
+        root: dict[str, Any],
+        current: dict[str, Any],
+        citations: Sequence[dict[str, object]],
+        actor: str,
+        reason: str,
+    ) -> BindResult:
+        """Run the reviewed A3a safe-bind writes inside the caller's transaction."""
+        concept_id = cast(str, root["id"])
+        proposal = context.propose(
+            statement=cast(str, root["statement"]),
+            state="unknown",
+            target=None,
+            citations=list(citations),
+            producer=actor,
+        )
+        assertion_id = cast(str, proposal["assertion_id"])
+        repository._checkpoint("after_assertion")
+        repository.insert_bound(
+            assertion_id=assertion_id,
+            origin="legacy-bind",
+            kind=cast(str, root["kind"]),
+            title=cast(str, root["title"]),
+            statement=cast(str, root["statement"]),
+            tags=tuple(json.loads(cast(str, root["canonical_tags"]))),
+            confidence=float(root["confidence"]),
+            source_session_id=cast(str, root["source_session_id"]),
+            source_uri=cast(str, root["source_uri"]),
+            producer=cast(str, root["producer"]),
+            legacy_file_sha256=cast(str, root["legacy_file_sha256"]),
+            supersedes_concept_id=concept_id,
+        )
+        repository.append_event(
+            concept_id=assertion_id,
+            parent_event_id=None,
+            standing="proposed",
+            actor=actor,
+            reason=reason,
+        )
+        repository._checkpoint("after_bound_initial_event")
+        repository.append_event(
+            concept_id=concept_id,
+            parent_event_id=cast(str, current["id"]),
+            standing="retired",
+            actor=actor,
+            reason=f"{reason}; bound_to={assertion_id}",
+        )
+        repository._checkpoint("after_legacy_retired_event")
+        return BindResult(
+            writes=4,
+            legacy_concept_id=concept_id,
+            concept_id=assertion_id,
+            assertion_id=assertion_id,
+        )
+
     def bind_legacy(
         self,
         concept_id: str,
@@ -714,6 +780,7 @@ class ConceptService:
         if issues:
             return BindResult(writes=0, legacy_concept_id=concept_id, errors=issues)
         with open_context(self._db, write=True, project=project) as context:
+            _ensure_schema(context.conn)
             repository = _ConceptRepository(context.conn, now=self._now)
             root = repository.authorized_root(context, concept_id)
             if root is None:
@@ -761,48 +828,190 @@ class ConceptService:
                     legacy_concept_id=concept_id,
                     errors=resolution_issues,
                 )
-            proposal = context.propose(
-                statement=cast(str, root["statement"]),
-                state="unknown",
-                target=None,
-                citations=list(citations),
-                producer=actor,
-            )
-            assertion_id = cast(str, proposal["assertion_id"])
-            repository._checkpoint("after_assertion")
-            repository.insert_bound(
-                assertion_id=assertion_id,
-                origin="legacy-bind",
-                kind=cast(str, root["kind"]),
-                title=cast(str, root["title"]),
-                statement=cast(str, root["statement"]),
-                tags=tuple(json.loads(cast(str, root["canonical_tags"]))),
-                confidence=float(root["confidence"]),
-                source_session_id=cast(str, root["source_session_id"]),
-                source_uri=cast(str, root["source_uri"]),
-                producer=cast(str, root["producer"]),
-                legacy_file_sha256=cast(str, root["legacy_file_sha256"]),
-                supersedes_concept_id=concept_id,
-            )
-            repository.append_event(
-                concept_id=assertion_id,
-                parent_event_id=None,
-                standing="proposed",
+            return self._bind_resolved_legacy(
+                context=context,
+                repository=repository,
+                root=root,
+                current=current,
+                citations=citations,
                 actor=actor,
                 reason=reason,
             )
-            repository._checkpoint("after_bound_initial_event")
-            repository.append_event(
-                concept_id=concept_id,
-                parent_event_id=cast(str, current["id"]),
-                standing="retired",
-                actor=actor,
-                reason=f"{reason}; bound_to={assertion_id}",
+
+    def import_okf(
+        self,
+        root: Path,
+        *,
+        actor: str,
+        project: str | None = None,
+        dry_run: bool = False,
+    ) -> ImportReport:
+        """Import valid OKF roots atomically after complete parse and resolution."""
+        scan = _scan_okf(root)
+        base_values: dict[str, int] = {
+            name: cast(int, value)
+            for name, value in scan.report.to_dict().items()
+            if name != "errors"
+        }
+
+        def build_report(
+            updates: dict[str, int] | None = None,
+            *,
+            errors: tuple[OKFImportError, ...] | None = None,
+        ) -> ImportReport:
+            values = {**base_values, **(updates or {})}
+            return ImportReport(
+                **values,
+                errors=scan.report.errors if errors is None else errors,
             )
-            repository._checkpoint("after_legacy_retired_event")
-            return BindResult(
-                writes=4,
-                legacy_concept_id=concept_id,
-                concept_id=assertion_id,
-                assertion_id=assertion_id,
+
+        actor_issue = _call_text(actor, "/actor", 128)
+        if actor_issue is not None:
+            return build_report(
+                errors=(
+                    *scan.report.errors[: MAX_ERROR_ENTRIES - 1],
+                    OKFImportError("", actor_issue.code, actor_issue.path),
+                )
+            )
+        if not scan.records:
+            return scan.report
+
+        counters = {
+            "already_present": 0,
+            "bound": 0,
+            "legacy_unbound": 0,
+            "missing_session": 0,
+            "no_visible_evidence": 0,
+            "no_exact_match": 0,
+            "ambiguous_match": 0,
+        }
+        plans: list[tuple[_OKFRecord, tuple[dict[str, object], ...] | None]] = []
+        imported = 0
+        writes = 0
+        try:
+            with open_context(self._db, write=not dry_run, project=project) as context:
+                if not dry_run:
+                    _ensure_schema(context.conn)
+                has_sidecar = (
+                    context.conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='context_concepts'"
+                    ).fetchone()
+                    is not None
+                )
+                for record in scan.records:
+                    if (
+                        has_sidecar
+                        and context.conn.execute(
+                            "SELECT 1 FROM context_concepts "
+                            "WHERE id=? OR supersedes_concept_id=? LIMIT 1",
+                            (record.legacy_id, record.legacy_id),
+                        ).fetchone()
+                        is not None
+                    ):
+                        counters["already_present"] += 1
+                        continue
+                    resolver = _EvidenceResolver(context, record.session_id)
+                    citations: tuple[dict[str, object], ...] | None = None
+                    if (
+                        context.conn.execute(
+                            "SELECT 1 FROM sessions WHERE id=?", (record.session_id,)
+                        ).fetchone()
+                        is None
+                    ):
+                        reason = "missing_session"
+                    elif len(record.statement) > 2000:
+                        reason = "no_exact_match"
+                    else:
+                        sources = resolver._visible_sources()
+                        if not sources:
+                            reason = "no_visible_evidence"
+                        else:
+                            matches = [
+                                (
+                                    identity,
+                                    start,
+                                    start + len(record.statement),
+                                    record.statement,
+                                )
+                                for identity, body in sources.items()
+                                for start in resolver._occurrences(body, record.statement)
+                            ]
+                            if not matches:
+                                reason = "no_exact_match"
+                            elif len(matches) > 1:
+                                reason = "ambiguous_match"
+                            else:
+                                reason = "bound"
+                                match = matches[0]
+                                citations = (
+                                    {
+                                        "evidence_id": match[0],
+                                        "start": match[1],
+                                        "end": match[2],
+                                        "quote": match[3],
+                                    },
+                                )
+                    counters[reason] += 1
+                    if reason != "bound":
+                        counters["legacy_unbound"] += 1
+                    plans.append((record, citations))
+
+                if dry_run:
+                    return build_report(counters)
+
+                repository = _ConceptRepository(context.conn, now=self._now)
+                for record, citations in plans:
+                    repository.seed_legacy(
+                        original_bytes=record.original_bytes,
+                        kind=record.kind,
+                        title=record.title,
+                        statement=record.statement,
+                        tags=record.tags,
+                        confidence=record.confidence,
+                        source_session_id=record.session_id,
+                        source_uri=record.source_uri,
+                        producer=record.actor,
+                        event_actor=actor,
+                    )
+                    imported += 1
+                    writes += 1
+                    if citations is not None:
+                        legacy_root = repository.authorized_root(context, record.legacy_id)
+                        if legacy_root is None:
+                            raise RuntimeError("Imported legacy root is unavailable")
+                        current = repository.current_event(record.legacy_id)
+                        bound_result = self._bind_resolved_legacy(
+                            context=context,
+                            repository=repository,
+                            root=legacy_root,
+                            current=current,
+                            citations=citations,
+                            actor=actor,
+                            reason="legacy OKF exact-body binding",
+                        )
+                        writes += bound_result.writes
+            return build_report({**counters, "imported": imported, "writes": writes})
+        except ScopeError:
+            code = "project_unavailable" if project is not None else "scope_unavailable"
+            field = "/project" if project is not None else "/scope"
+            return build_report(
+                counters,
+                errors=(
+                    *scan.report.errors[: MAX_ERROR_ENTRIES - 1],
+                    OKFImportError("", code, field),
+                ),
+            )
+        except Exception:
+            failure_count = len(plans) or len(scan.records) or 1
+            return build_report(
+                {
+                    **counters,
+                    "imported": 0,
+                    "write_failures": failure_count,
+                    "writes": 0,
+                },
+                errors=(
+                    *scan.report.errors[: MAX_ERROR_ENTRIES - 1],
+                    OKFImportError("", "write_failed", "/"),
+                ),
             )

@@ -1,21 +1,40 @@
-"""`session-weaver` CLI: install the skill, inspect state, and maintain ontology."""
+"""`session-weaver` CLI: install, inspect, and perform bounded database writes."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
+import stat
 import sys
+import tempfile
 from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, BinaryIO, TextIO
+
+from agent_session_tools.context.scope import ScopeError
 
 from . import __version__
+from .concepts import BatchResult, BindResult, ConceptService, TransitionResult
 from .harnesses import HARNESSES, parse_harness_selection
 from .installer import install_skill, status, uninstall_skill
+from .okf import ImportReport
 from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
+from .winddown import MAX_REQUEST_BYTES, _Issue
+
+_DEFAULT_WINDDOWN_ACTOR = "session-weaver/winddown"
+_DEFAULT_OPERATOR_ACTOR = "session-weaver/operator"
+_DEFAULT_IMPORT_ACTOR = "session-weaver/import-okf"
+
+
+class _InputFailure(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
 
 
 def _harness_arg(parser: argparse.ArgumentParser) -> None:
@@ -26,10 +45,18 @@ def _harness_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _nonempty_db_arg(value: str) -> str:
-    if value == "":
-        raise argparse.ArgumentTypeError("--db must not be empty")
+def _nonempty(value: str, label: str) -> str:
+    if not value.strip():
+        raise argparse.ArgumentTypeError(f"{label} must not be empty")
     return value
+
+
+def _nonempty_type(label: str) -> Any:
+    return lambda value: _nonempty(value, label)
+
+
+def _nonempty_db_arg(value: str) -> str:
+    return _nonempty(value, "--db")
 
 
 def _db_arg(parser: argparse.ArgumentParser) -> None:
@@ -41,10 +68,23 @@ def _db_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _concept_common_args(
+    parser: argparse.ArgumentParser,
+    *,
+    default_actor: str,
+    reason: bool = False,
+) -> None:
+    if reason:
+        parser.add_argument("--reason", required=True, type=_nonempty_type("--reason"))
+    parser.add_argument("--actor", default=default_actor, type=_nonempty_type("--actor"))
+    parser.add_argument("--project", default=None, type=_nonempty_type("--project"))
+    _db_arg(parser)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="session-weaver",
-        description="Cross-harness session memory: installer, doctor, and ontology maintenance.",
+        description="Cross-harness session memory: installer, ontology, and concept maintenance.",
     )
     parser.add_argument("--version", action="version", version=f"session-weaver {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -91,6 +131,31 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="inspect ontology health without mutating the database"
     )
     _db_arg(p_ontology_status)
+
+    p_winddown = sub.add_parser("winddown", help="write a bounded evidence-backed wind-down")
+    p_winddown.add_argument("--session", required=True, type=_nonempty_type("--session"))
+    winddown_input = p_winddown.add_mutually_exclusive_group(required=True)
+    winddown_input.add_argument("--from", dest="input_file", type=_nonempty_type("--from"))
+    winddown_input.add_argument("--stdin", action="store_true")
+    _concept_common_args(p_winddown, default_actor=_DEFAULT_WINDDOWN_ACTOR)
+
+    p_concept = sub.add_parser("concept", help="manage concept lifecycle and legacy imports")
+    concept_sub = p_concept.add_subparsers(dest="concept_command", required=True)
+    for command in ("accept", "retire"):
+        lifecycle = concept_sub.add_parser(command, help=f"{command} one concept")
+        lifecycle.add_argument("concept_id", type=_nonempty_type("concept id"))
+        _concept_common_args(lifecycle, default_actor=_DEFAULT_OPERATOR_ACTOR, reason=True)
+
+    p_bind = concept_sub.add_parser("bind", help="bind a legacy root to exact evidence")
+    p_bind.add_argument("concept_id", type=_nonempty_type("concept id"))
+    p_bind.add_argument("--from", dest="input_file", required=True, type=_nonempty_type("--from"))
+    _concept_common_args(p_bind, default_actor=_DEFAULT_OPERATOR_ACTOR, reason=True)
+
+    p_import = concept_sub.add_parser("import-okf", help="import a recursive legacy OKF tree")
+    p_import.add_argument("directory", type=_nonempty_type("directory"))
+    p_import.add_argument("--report", default=None, type=_nonempty_type("--report"))
+    p_import.add_argument("--dry-run", action="store_true")
+    _concept_common_args(p_import, default_actor=_DEFAULT_IMPORT_ACTOR)
     return parser
 
 
@@ -109,6 +174,270 @@ def _emit_json(payload: dict[str, Any], *, error: bool = False) -> None:
         json.dumps(payload, sort_keys=True, separators=(",", ":")),
         file=sys.stderr if error else sys.stdout,
     )
+
+
+def _issue_payload(issue: _Issue) -> dict[str, str]:
+    return {"path": issue.path, "code": issue.code, "message": issue.message}
+
+
+def _input_error_payload(command: str, failure: _InputFailure) -> dict[str, Any]:
+    return {
+        "command": command,
+        "errors": [{"path": "/", "code": failure.code, "message": failure.message}],
+        "writes": 0,
+    }
+
+
+def _runtime_failure(command: str) -> int:
+    _emit_json(
+        {"command": command, "error": "operation failed", "writes": 0},
+        error=True,
+    )
+    return 1
+
+
+def _scope_failure(command: str, *, project: str | None) -> int:
+    code = "project_unavailable" if project is not None else "scope_unavailable"
+    path = "/project" if project is not None else "/scope"
+    _emit_json(
+        {
+            "command": command,
+            "errors": [
+                {
+                    "path": path,
+                    "code": code,
+                    "message": "Configured scope is unavailable",
+                }
+            ],
+            "writes": 0,
+        },
+        error=True,
+    )
+    return 2
+
+
+def _read_descriptor(descriptor: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = MAX_REQUEST_BYTES + 1
+    while remaining:
+        chunk = os.read(descriptor, min(8192, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    payload = b"".join(chunks)
+    if len(payload) > MAX_REQUEST_BYTES:
+        raise _InputFailure("input_too_large", "Input exceeds the bounded request limit")
+    return payload
+
+
+def _read_input_file(value: str) -> bytes:
+    path = Path(value).expanduser()
+    if path.is_symlink() or not path.is_file():
+        raise _InputFailure("unsafe_input", "Input must be a regular non-symlink file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise _InputFailure("unsafe_input", "Input could not be opened safely") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise _InputFailure("unsafe_input", "Input must be a regular file")
+        if metadata.st_size > MAX_REQUEST_BYTES:
+            raise _InputFailure("input_too_large", "Input exceeds the bounded request limit")
+        return _read_descriptor(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _read_stdin() -> bytes:
+    source: BinaryIO | TextIO = getattr(sys.stdin, "buffer", sys.stdin)
+    value = source.read(MAX_REQUEST_BYTES + 1)
+    payload = value if isinstance(value, bytes) else value.encode("utf-8")
+    if len(payload) > MAX_REQUEST_BYTES:
+        raise _InputFailure("input_too_large", "Input exceeds the bounded request limit")
+    return payload
+
+
+def _safe_import_directory(value: str) -> Path:
+    root = Path(value).expanduser()
+    if root.is_symlink() or not root.is_dir():
+        raise _InputFailure("unsafe_directory", "Directory must be a non-symlink directory")
+    return root
+
+
+def _safe_report_target(value: str | None) -> Path | None:
+    if value in (None, "-"):
+        return None
+    target = Path(value).expanduser()
+    parent = target.parent
+    if (
+        target.is_symlink()
+        or (target.exists() and not target.is_file())
+        or parent.is_symlink()
+        or not parent.is_dir()
+    ):
+        raise _InputFailure("unsafe_report_target", "Report target is unsafe")
+    return target
+
+
+def _write_report_atomic(target: Path, payload: dict[str, Any]) -> None:
+    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=target.parent,
+        prefix=".session-weaver-",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    descriptor_open = True
+    try:
+        os.fchmod(descriptor, 0o600)
+        stream = os.fdopen(descriptor, "wb")
+        descriptor_open = False
+        with stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise _InputFailure("unsafe_report_target", "Report target became unsafe")
+        os.replace(temporary, target)
+    finally:
+        if descriptor_open:
+            os.close(descriptor)
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _batch_payload(result: BatchResult) -> dict[str, Any]:
+    return {
+        "command": "winddown",
+        "writes": result.writes,
+        "concept_ids": list(result.concept_ids),
+        "errors": [_issue_payload(issue) for issue in result.errors],
+    }
+
+
+def _transition_payload(command: str, result: TransitionResult) -> dict[str, Any]:
+    return {
+        "command": command,
+        "writes": result.writes,
+        "concept_id": result.concept_id,
+        "standing": result.standing,
+        "event_id": result.event_id,
+        "errors": [_issue_payload(issue) for issue in result.errors],
+    }
+
+
+def _bind_payload(result: BindResult) -> dict[str, Any]:
+    return {
+        "command": "concept bind",
+        "writes": result.writes,
+        "legacy_concept_id": result.legacy_concept_id,
+        "concept_id": result.concept_id,
+        "assertion_id": result.assertion_id,
+        "errors": [_issue_payload(issue) for issue in result.errors],
+    }
+
+
+def _winddown(args: argparse.Namespace) -> int:
+    try:
+        document = _read_stdin() if args.stdin else _read_input_file(args.input_file)
+    except _InputFailure as failure:
+        _emit_json(_input_error_payload("winddown", failure), error=True)
+        return 2
+    try:
+        service = ConceptService(_database_path(args.db), prepare_schema=False)
+        result = service.winddown(
+            args.session,
+            document,
+            actor=args.actor,
+            project=args.project,
+        )
+    except ScopeError:
+        return _scope_failure("winddown", project=args.project)
+    except Exception:
+        return _runtime_failure("winddown")
+    payload = _batch_payload(result)
+    _emit_json(payload, error=bool(result.errors))
+    return 2 if result.errors else 0
+
+
+def _concept_transition(args: argparse.Namespace) -> int:
+    command = f"concept {args.concept_command}"
+    try:
+        service = ConceptService(_database_path(args.db), prepare_schema=False)
+        result = service.transition(
+            args.concept_id,
+            "accepted" if args.concept_command == "accept" else "retired",
+            actor=args.actor,
+            reason=args.reason,
+            project=args.project,
+        )
+    except ScopeError:
+        return _scope_failure(command, project=args.project)
+    except Exception:
+        return _runtime_failure(command)
+    payload = _transition_payload(command, result)
+    _emit_json(payload, error=bool(result.errors))
+    return 2 if result.errors else 0
+
+
+def _concept_bind(args: argparse.Namespace) -> int:
+    try:
+        document = _read_input_file(args.input_file)
+    except _InputFailure as failure:
+        _emit_json(_input_error_payload("concept bind", failure), error=True)
+        return 2
+    try:
+        service = ConceptService(_database_path(args.db), prepare_schema=False)
+        result = service.bind_legacy(
+            args.concept_id,
+            document,
+            actor=args.actor,
+            reason=args.reason,
+            project=args.project,
+        )
+    except ScopeError:
+        return _scope_failure("concept bind", project=args.project)
+    except Exception:
+        return _runtime_failure("concept bind")
+    payload = _bind_payload(result)
+    _emit_json(payload, error=bool(result.errors))
+    return 2 if result.errors else 0
+
+
+def _concept_import(args: argparse.Namespace) -> int:
+    try:
+        root = _safe_import_directory(args.directory)
+        report_target = _safe_report_target(args.report)
+    except _InputFailure as failure:
+        _emit_json(_input_error_payload("concept import-okf", failure), error=True)
+        return 2
+    try:
+        service = ConceptService(_database_path(args.db), prepare_schema=False)
+        report: ImportReport = service.import_okf(
+            root,
+            actor=args.actor,
+            project=args.project,
+            dry_run=args.dry_run,
+        )
+        payload = report.to_dict()
+        if report_target is not None:
+            _write_report_atomic(report_target, payload)
+    except _InputFailure as failure:
+        _emit_json(_input_error_payload("concept import-okf", failure), error=True)
+        return 2
+    except Exception:
+        return _runtime_failure("concept import-okf")
+    if report.write_failures:
+        _emit_json(payload, error=True)
+        return 1
+    if any(error.relative_path == "" for error in report.errors):
+        _emit_json(payload, error=True)
+        return 2
+    _emit_json(payload)
+    return 0
 
 
 def _ontology_rebuild(db_arg: str | None, *, incremental: bool) -> int:
@@ -220,6 +549,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.ontology_command == "rebuild":
             return _ontology_rebuild(args.db, incremental=args.incremental)
         return _ontology_status(args.db)
+    if args.command == "winddown":
+        return _winddown(args)
+    if args.command == "concept":
+        if args.concept_command in ("accept", "retire"):
+            return _concept_transition(args)
+        if args.concept_command == "bind":
+            return _concept_bind(args)
+        return _concept_import(args)
 
     try:
         harnesses = parse_harness_selection(args.harness)
