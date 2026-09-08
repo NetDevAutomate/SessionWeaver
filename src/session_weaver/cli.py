@@ -11,6 +11,7 @@ import sys
 import tomllib
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, TextIO, cast
@@ -36,10 +37,16 @@ from .concept_schema import (
     verify_installed_schema,
 )
 from .concepts import BatchResult, BindResult, ConceptService, TransitionResult
-from .harnesses import HARNESSES, parse_harness_selection
-from .installer import install_skill, status, uninstall_skill
+from .harnesses import HARNESSES, hub_dir, parse_harness_selection
+from .installer import SKILL_NAME, install_skill, packaged_skill_dir, status, uninstall_skill
 from .okf import ImportReport
-from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
+from .ontology import (
+    OntologyError,
+    OntologyStatus,
+    _parse_timestamp,
+    ontology_status,
+    rebuild_ontology,
+)
 from .projection import ProjectionReport
 from .recall import RecallReport, plan, recall
 from .safe_fs import _FILE_CREATE_FLAGS, _open_directory_nofollow
@@ -766,6 +773,74 @@ def _doctor_concept_sidecar(conn: sqlite3.Connection) -> int:
     return 0
 
 
+STALE_SESSION_DAYS = 7
+
+
+def _doctor_utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _doctor_store_freshness(conn: sqlite3.Connection) -> None:
+    """Report-only stale-context probe: age of the newest exported session.
+
+    Timestamps are parsed and compared chronologically; a text-level SQL MAX
+    would order mixed `...Z` / `...+HH:MM` formats lexicographically instead.
+    """
+    try:
+        rows = conn.execute("SELECT updated_at FROM sessions WHERE updated_at IS NOT NULL")
+        newest: tuple[datetime, str] | None = None
+        for (raw,) in rows:
+            parsed = _parse_timestamp(raw)
+            if parsed is not None and (newest is None or parsed > newest[0]):
+                newest = (parsed, raw)
+    except sqlite3.Error:
+        print("INFO  session store freshness unknown: updated_at unreadable")
+        return
+    if newest is None:
+        print("INFO  session store freshness unknown: no readable session timestamps")
+        return
+    newest_at, newest_raw = newest
+    age = _doctor_utc_now() - newest_at
+    if age < timedelta(0):
+        print(
+            f"INFO  session store freshness unknown: newest session {newest_raw} "
+            "is in the future (check the system clock)"
+        )
+        return
+    if age > timedelta(days=STALE_SESSION_DAYS):
+        print(
+            f"INFO  session store stale: newest session {newest_raw} is {age.days} days old "
+            "(run session-export)"
+        )
+    else:
+        print(f"ok    session store fresh: newest session {newest_raw}")
+
+
+def _doctor_hub_skill(home: Path) -> None:
+    """Report-only stale-context probe: installed hub skill vs the packaged copy."""
+    installed = hub_dir(home) / SKILL_NAME / "SKILL.md"
+    if not installed.is_file():
+        print(f"INFO  hub skill absent: {installed} (run session-weaver install)")
+        return
+    try:
+        installed_bytes = installed.read_bytes()
+    except OSError:
+        print(f"INFO  hub skill unreadable: {installed}")
+        return
+    try:
+        current = installed_bytes == (packaged_skill_dir() / "SKILL.md").read_bytes()
+    except OSError:
+        print("INFO  hub skill comparison unavailable: packaged skill copy unreadable")
+        return
+    if current:
+        print(f"ok    hub skill current: {installed}")
+    else:
+        print(
+            f"INFO  hub skill stale: {installed} differs from the packaged skill "
+            "(run session-weaver install)"
+        )
+
+
 def _known_recall_term(db: Path) -> str | None:
     with open_context(db) as context:
         visible_concepts = authorized_concepts(context, project=context.project)
@@ -850,6 +925,7 @@ def _doctor(db_arg: str | None) -> int:
                     conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
                 )
                 print(f"ok    session store {db}: {sessions} sessions / {messages} messages")
+                _doctor_store_freshness(conn)
                 try:
                     ontology_result = ontology_status(conn)
                     failures += _print_doctor_ontology(ontology_result)
@@ -857,8 +933,19 @@ def _doctor(db_arg: str | None) -> int:
                     print("FAIL  ontology inspection failed")
                     failures += 1
                 failures += _doctor_concept_sidecar(conn)
-                recall_term = _known_recall_term(db)
-            failures += _doctor_recall(db, recall_term)
+                recall_term: str | None = None
+                recall_ready = False
+                try:
+                    recall_term = _known_recall_term(db)
+                    recall_ready = True
+                except ScopeError as exc:
+                    print(f"FAIL  recall positive control unavailable: {exc}")
+                    failures += 1
+                except Exception:
+                    print("FAIL  recall positive control unavailable: term selection failed")
+                    failures += 1
+            if recall_ready:
+                failures += _doctor_recall(db, recall_term)
         except sqlite3.Error as exc:
             print(f"FAIL  session store {db}: unreadable ({exc})")
             failures += 1
@@ -875,6 +962,7 @@ def _doctor(db_arg: str | None) -> int:
     home = Path.home()
     _doctor_mcp_registration(home)
     _doctor_grok_skill(home)
+    _doctor_hub_skill(home)
     return 1 if failures else 0
 
 

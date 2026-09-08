@@ -7,6 +7,28 @@ may change before `1.0.0`.
 
 ## [Unreleased]
 
+### Added
+
+- Added report-only stale-context probes to `session-weaver doctor`: newest-session store
+  freshness (stale after 7 days; remediation `session-export`) and installed hub-skill drift
+  against the packaged copy (remediation `session-weaver install`).
+- Documented stale-context checks and remediations in both byte-identical skill copies and the
+  README doctor section.
+- Added `code/README.md` describing the frozen storage-PoC evidence scripts and their
+  maintained successors.
+
+### Fixed
+
+- `session-weaver doctor` no longer crashes with an unhandled `ScopeError` traceback when no
+  context scope is configured: the recall positive control reports a classified fatal failure
+  and every remaining check still runs.
+- Updated the contributor and security guides for maintained 0.2.x writes, installer ownership
+  and explicit force behaviour. Distinguished Unreleased doctor probes from the immutable tag.
+- Added current OKF and ontology walkthroughs and a GitHub-renderable Archify diagram index;
+  retained historical diagrams and measurements as provenance rather than setup guidance.
+- Ignored private session databases, generated knowledge, environment files and local review
+  artifacts, and removed stale gitignore generator error comments.
+
 ## [0.2.0] - 2026-09-08
 
 Session Weaver 0.2.0 packages the reviewed Phase A concept, recall, ontology, doctor, and
