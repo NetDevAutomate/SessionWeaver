@@ -226,7 +226,34 @@
       "P": 8,
       "R": 6,
       "total": 25
-    }
+    },
+    "visible_question_ids": [
+      "K01",
+      "K02",
+      "K03",
+      "K04",
+      "K05",
+      "K06",
+      "K08",
+      "K09",
+      "K10",
+      "K11",
+      "K12",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P10",
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R06"
+    ]
   },
   "exit_code": 3,
   "k": 5,
@@ -278,9 +305,9 @@
     },
     "source_sentinels_unchanged": true,
     "timings_seconds": {
-      "export": 0.540124,
-      "import_okf": 65.28813,
-      "ontology": 3.375899
+      "export": 0.553685,
+      "import_okf": 65.174469,
+      "ontology": 3.356282
     }
   },
   "positive_control": {
@@ -358,7 +385,7 @@
   },
   "schema": "session-weaver.benchmark.v1",
   "timings_seconds": {
-    "benchmark": 23.257853
+    "benchmark": 23.717744
   },
   "verdict": "investigate",
   "visible_subset": {

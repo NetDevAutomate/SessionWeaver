@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 import subprocess
 from collections import Counter
-from collections.abc import Mapping, Sequence
-from contextlib import closing
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import perf_counter
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
@@ -35,12 +37,35 @@ _DIRECT_URL_GLOB = (
     ".local/share/uv/tools/agent-session-tools/lib/python*/site-packages/"
     "agent_session_tools-*.dist-info/direct_url.json"
 )
-_EXPECTED_VISIBLE = 22
 EXPECTED_GOLD_COUNTS = {"K": 11, "P": 8, "R": 6}
 EXPECTED_GOLD_IDS = (
     *(f"K{i:02d}" for i in (1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12)),
     *(f"P{i:02d}" for i in (1, 2, 3, 4, 5, 6, 7, 10)),
     *(f"R{i:02d}" for i in range(1, 7)),
+)
+POC_ELIGIBLE_IDS = (
+    "K01",
+    "K02",
+    "K03",
+    "K04",
+    "K05",
+    "K06",
+    "K08",
+    "K09",
+    "K10",
+    "K12",
+    "P01",
+    "P02",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P10",
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
 )
 CATEGORY_FLOORS = {"K": 0.81, "P": 0.15, "R": 0.57}
 CONTROL_BANDS = {"recall_at_5": (0.38, 0.58), "mrr_at_5": (0.28, 0.48)}
@@ -243,12 +268,40 @@ def control_verdict(
     return "fail"
 
 
-def comparability_label(visible_questions: int) -> str:
+def comparability_label(visible_question_ids: Sequence[str]) -> str:
+    visible = tuple(visible_question_ids)
     return (
         "directly comparable"
-        if visible_questions == _EXPECTED_VISIBLE
+        if len(visible) == len(POC_ELIGIBLE_IDS)
+        and frozenset(visible) == frozenset(POC_ELIGIBLE_IDS)
         else "not directly comparable"
     )
+
+
+@contextmanager
+def _isolated_benchmark_scope() -> Iterator[None]:
+    """Pin benchmark visibility without inheriting process or user scope state."""
+    previous_config = os.environ.get("STUDYLOOP_CONFIG")
+    previous_override = os.environ.get("SESSION_CONTEXT_SCOPE")
+    with TemporaryDirectory(prefix="session-weaver-bench-") as directory:
+        config = Path(directory) / "config.json"
+        config.write_text(
+            json.dumps({"memory": {"default_scope": "unclassified", "projects": {}}}) + "\n",
+            encoding="utf-8",
+        )
+        os.environ["STUDYLOOP_CONFIG"] = str(config)
+        os.environ.pop("SESSION_CONTEXT_SCOPE", None)
+        try:
+            yield
+        finally:
+            if previous_config is None:
+                os.environ.pop("STUDYLOOP_CONFIG", None)
+            else:
+                os.environ["STUDYLOOP_CONFIG"] = previous_config
+            if previous_override is None:
+                os.environ.pop("SESSION_CONTEXT_SCOPE", None)
+            else:
+                os.environ["SESSION_CONTEXT_SCOPE"] = previous_override
 
 
 def _read_only_uri(path: Path) -> str:
@@ -576,6 +629,10 @@ def _directional_report(db: Path, *, k: int) -> dict[str, Any]:
     questions = load_gold(default_directional_path())
     evidence = {question.id: question.evidence for question in questions}
     audit = audit_gold(db, questions, evidence)
+    if len(questions) < 40:
+        raise ValueError("directional benchmark requires at least 40 corpus-verified questions")
+    if audit["verified_questions"] != len(questions) or audit["failures"]:
+        raise ValueError("directional benchmark requires every question to pass corpus audit")
     rows = []
     for question in questions:
         hit, reciprocal_rank = score(
@@ -596,7 +653,7 @@ def _directional_report(db: Path, *, k: int) -> dict[str, Any]:
     }
 
 
-def run_benchmark(
+def _run_benchmark(
     db: Path,
     *,
     gold_path: Path | None = None,
@@ -639,7 +696,11 @@ def run_benchmark(
         verdict, exit_code = "fail", 1
     elif control_status == "investigate" and verdict == "pass":
         verdict, exit_code = "investigate", 3
+    if posture_result["label"] == "pre-fix/provisional" and verdict == "pass":
+        verdict, exit_code = "investigate", 3
     visible_counts = cast(Mapping[str, int], posture_result["visible_questions"])
+    question_visibility = cast(Mapping[str, bool], posture_result["question_visibility"])
+    visible_question_ids = [question.id for question in gold if question_visibility[question.id]]
     report: dict[str, Any] = {
         "schema": _SCHEMA,
         "k": k,
@@ -650,10 +711,11 @@ def run_benchmark(
         "eligibility": {
             "all": {"total": 25, **EXPECTED_GOLD_COUNTS},
             "visible": dict(visible_counts),
+            "visible_question_ids": visible_question_ids,
             "gold_sessions": posture_result["gold_sessions"],
             "gold_sessions_by_category": posture_result["gold_sessions_by_category"],
         },
-        "comparability": comparability_label(visible_counts["total"]),
+        "comparability": comparability_label(visible_question_ids),
         "all_25": all_metrics,
         "visible_subset": visible_metrics,
         "positive_control": {
@@ -675,6 +737,18 @@ def run_benchmark(
             rows, _repo_root() / "docs" / "data" / "bench-results-t2.json"
         )
     return report
+
+
+def run_benchmark(
+    db: Path,
+    *,
+    gold_path: Path | None = None,
+    k: int = 5,
+    live_ro: bool = False,
+) -> dict[str, Any]:
+    """Run the benchmark under an isolated, pinned unclassified visibility policy."""
+    with _isolated_benchmark_scope():
+        return _run_benchmark(db, gold_path=gold_path, k=k, live_ro=live_ro)
 
 
 def aggregate_evidence(
@@ -712,6 +786,11 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- Corpus posture: `{report['corpus_posture']['label']}`",
         f"- Comparability: `{report['comparability']}`",
         f"- Positive control: `{report['positive_control']['status']}`",
+        (
+            "- Stage closure: `blocked` until a post-fix exporter corpus is used."
+            if report["corpus_posture"]["label"] == "pre-fix/provisional"
+            else "- Stage closure: corpus posture is eligible for the metric verdict."
+        ),
         "",
         "| Report | Category | n | Recall@5 (95% CI) | MRR@5 (95% CI) |",
         "|---|---:|---:|---:|---:|",
@@ -730,6 +809,25 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 f"| {label} | {category} | {summary['n']} | "
                 f"{summary['recall_at_5']:.3f} {tuple(summary['recall_ci95'])} | "
                 f"{summary['mrr_at_5']:.3f} {tuple(summary['mrr_ci95'])} |"
+            )
+    investigation = report.get("investigation")
+    if isinstance(investigation, Mapping):
+        lines.extend(
+            [
+                "",
+                "## Per-question investigation",
+                "",
+                "| ID | Type | Eligible | Visible gold | Concept candidates | "
+                "Previous hit | Current hit |",
+                "|---|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for question in cast(Sequence[Mapping[str, Any]], investigation["questions"]):
+            lines.append(
+                f"| {question['id']} | {question['type']} | "
+                f"{str(question['eligible']).lower()} | {question['visible_gold_sessions']} | "
+                f"{question['concept_candidates']} | {question['previous_hit']} | "
+                f"{question['hit']} |"
             )
     lines.extend(
         [
