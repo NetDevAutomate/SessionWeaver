@@ -53,6 +53,8 @@ session-weaver concept bind LEGACY_ID --from binding.json --reason "exact eviden
 session-weaver concept import-okf /path/to/okf --dry-run --report -
 session-weaver concept project --out DIR [--project ID] [--db PATH] [--json]
 session-weaver recall "<question>" [--k N] [--project ID] [--db PATH] [--json]
+session-weaver bench audit-gold --db PATH
+session-weaver bench run --db PATH [--gold docs/data/gold.json] [--k 5] [--json] [--out DIR] [--live-ro]
 ```
 
 Concept writes target the same SQLite database as the session tools and return
@@ -107,6 +109,18 @@ report shape is frozen and schema-checked
 ([`recall-contract.json`](docs/data/recall-contract.json)). Recall ships with **no
 embeddings** and never consults the tier-1 ontology tables — it is pure keyword search
 over the same authoritative stores `concept project` reads.
+
+`bench audit-gold --db PATH` verifies the frozen 25-question K11/P8/R6 corpus before
+scoring. `bench run` evaluates at `k=5` and emits all-25 plus visibility-eligible-subset
+recall@5/MRR@5 with Wilson 95% intervals, the same-visibility raw-text positive control,
+a clearly non-gating unrestricted diagnostic, concept-candidate coverage, and a separate
+corpus-verified directional paraphrase table. The pre-registered verdict is PASS at
+overall recall ≥0.64 with floors K≥0.81/P≥0.15/R≥0.57, INVESTIGATE at 0.54–0.64 when
+all floors pass, and FAIL below 0.54 or on any floor breach; these bands are not tuned
+after measurement. A production exporter older than fix `7f9a19ec` labels the entire run
+`pre-fix/provisional` and cannot close the stage. Ontology rebuild is parity preparation
+only and never becomes a recall input. Live evaluation must use SQLite Online Backup;
+`--live-ro` only permits an explicit read-only diagnostic of the live path.
 
 The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
 Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a

@@ -1,0 +1,424 @@
+{
+  "all_25": {
+    "categories": {
+      "K": {
+        "hits": 9,
+        "mrr_at_5": 0.621212,
+        "mrr_ci95": [
+          0.341058,
+          0.838617
+        ],
+        "n": 11,
+        "recall_at_5": 0.818182,
+        "recall_ci95": [
+          0.523014,
+          0.948633
+        ]
+      },
+      "P": {
+        "hits": 2,
+        "mrr_at_5": 0.15625,
+        "mrr_ci95": [
+          0.032809,
+          0.502727
+        ],
+        "n": 8,
+        "recall_at_5": 0.25,
+        "recall_ci95": [
+          0.071478,
+          0.59073
+        ]
+      },
+      "R": {
+        "hits": 4,
+        "mrr_at_5": 0.583333,
+        "mrr_ci95": [
+          0.241074,
+          0.860536
+        ],
+        "n": 6,
+        "recall_at_5": 0.666667,
+        "recall_ci95": [
+          0.299988,
+          0.903231
+        ]
+      }
+    },
+    "overall": {
+      "hits": 15,
+      "mrr_at_5": 0.463333,
+      "mrr_ci95": [
+        0.286163,
+        0.650272
+      ],
+      "n": 25,
+      "recall_at_5": 0.6,
+      "recall_ci95": [
+        0.407391,
+        0.765969
+      ]
+    }
+  },
+  "comparability": "not directly comparable",
+  "concept_candidate_coverage": {
+    "K01": 8,
+    "K02": 13,
+    "K03": 67,
+    "K04": 14,
+    "K05": 13,
+    "K06": 14,
+    "K08": 47,
+    "K09": 35,
+    "K10": 14,
+    "K11": 0,
+    "K12": 8,
+    "P01": 8,
+    "P02": 34,
+    "P03": 0,
+    "P04": 16,
+    "P05": 16,
+    "P06": 8,
+    "P07": 34,
+    "P10": 14,
+    "R01": 29,
+    "R02": 15,
+    "R03": 6,
+    "R04": 45,
+    "R05": 19,
+    "R06": 0
+  },
+  "corpus_posture": {
+    "exporter_at_or_after_fix": true,
+    "exporter_pin_sha": "fb60646847181891fdd48fbaf1ca90ec11275c03",
+    "label": "post-fix/eligible"
+  },
+  "diagnostic_unrestricted": {
+    "categories": {
+      "K": {
+        "hits": 9,
+        "mrr_at_5": 0.621212,
+        "mrr_ci95": [
+          0.341058,
+          0.838617
+        ],
+        "n": 11,
+        "recall_at_5": 0.818182,
+        "recall_ci95": [
+          0.523014,
+          0.948633
+        ]
+      },
+      "P": {
+        "hits": 2,
+        "mrr_at_5": 0.15625,
+        "mrr_ci95": [
+          0.032809,
+          0.502727
+        ],
+        "n": 8,
+        "recall_at_5": 0.25,
+        "recall_ci95": [
+          0.071478,
+          0.59073
+        ]
+      },
+      "R": {
+        "hits": 4,
+        "mrr_at_5": 0.583333,
+        "mrr_ci95": [
+          0.241074,
+          0.860536
+        ],
+        "n": 6,
+        "recall_at_5": 0.666667,
+        "recall_ci95": [
+          0.299988,
+          0.903231
+        ]
+      }
+    },
+    "overall": {
+      "hits": 15,
+      "mrr_at_5": 0.463333,
+      "mrr_ci95": [
+        0.286163,
+        0.650272
+      ],
+      "n": 25,
+      "recall_at_5": 0.6,
+      "recall_ci95": [
+        0.407391,
+        0.765969
+      ]
+    }
+  },
+  "directional_paraphrase": {
+    "corpus_verified": 40,
+    "label": "directional",
+    "metrics": {
+      "categories": {
+        "P": {
+          "hits": 0,
+          "mrr_at_5": 0.0,
+          "mrr_ci95": [
+            0.0,
+            0.087625
+          ],
+          "n": 40,
+          "recall_at_5": 0.0,
+          "recall_ci95": [
+            0.0,
+            0.087625
+          ]
+        }
+      },
+      "overall": {
+        "hits": 0,
+        "mrr_at_5": 0.0,
+        "mrr_ci95": [
+          0.0,
+          0.087625
+        ],
+        "n": 40,
+        "recall_at_5": 0.0,
+        "recall_ci95": [
+          0.0,
+          0.087625
+        ]
+      }
+    }
+  },
+  "eligibility": {
+    "all": {
+      "K": 11,
+      "P": 8,
+      "R": 6,
+      "total": 25
+    },
+    "gold_sessions": {
+      "missing": 0,
+      "other": 0,
+      "tombstoned": 0,
+      "visible": 70
+    },
+    "gold_sessions_by_category": {
+      "K": {
+        "missing": 0,
+        "other": 0,
+        "tombstoned": 0,
+        "visible": 33
+      },
+      "P": {
+        "missing": 0,
+        "other": 0,
+        "tombstoned": 0,
+        "visible": 28
+      },
+      "R": {
+        "missing": 0,
+        "other": 0,
+        "tombstoned": 0,
+        "visible": 17
+      }
+    },
+    "visible": {
+      "K": 11,
+      "P": 8,
+      "R": 6,
+      "total": 25
+    }
+  },
+  "exit_code": 3,
+  "k": 5,
+  "live_evaluation": {
+    "backup_method": "sqlite_online_backup",
+    "config_default_scope": "unclassified",
+    "export_run": {
+      "added": 0,
+      "empty": 26,
+      "skipped": 559,
+      "updated": 0
+    },
+    "gold_audit": {
+      "existing_sessions": 102,
+      "gold_sessions": 102,
+      "literal_verified_sessions": 102,
+      "questions": 25,
+      "verified_questions": 25
+    },
+    "okf_import": {
+      "already_present": 0,
+      "bound": 0,
+      "imported": 2033,
+      "legacy_unbound": 2033,
+      "parsed": 2033,
+      "scanned": 2035,
+      "write_failures": 0,
+      "writes": 2033
+    },
+    "okf_source_unchanged": true,
+    "ontology": {
+      "counts": {
+        "classes": 7,
+        "individuals": 13528,
+        "properties": 6,
+        "relations": 29475,
+        "source_messages": 139633,
+        "source_sessions": 5813,
+        "structural": 23241
+      },
+      "logical_sha256": "283430d2541cff1a0950b7d839f879dd1f29ae030f9d40fb3bf1ddc4def1eae4",
+      "mode": "full"
+    },
+    "source_sentinels_before": {
+      "evidence": 101245,
+      "messages": 139633,
+      "sessions": 5813,
+      "user_version": 47
+    },
+    "source_sentinels_unchanged": true,
+    "timings_seconds": {
+      "export": 0.540124,
+      "import_okf": 65.28813,
+      "ontology": 3.375899
+    }
+  },
+  "positive_control": {
+    "expected": {
+      "mrr_at_5": [
+        0.28,
+        0.48
+      ],
+      "recall_at_5": [
+        0.38,
+        0.58
+      ]
+    },
+    "metrics": {
+      "categories": {
+        "K": {
+          "hits": 7,
+          "mrr_at_5": 0.545455,
+          "mrr_ci95": [
+            0.280088,
+            0.78729
+          ],
+          "n": 11,
+          "recall_at_5": 0.636364,
+          "recall_ci95": [
+            0.353797,
+            0.848338
+          ]
+        },
+        "P": {
+          "hits": 1,
+          "mrr_at_5": 0.025,
+          "mrr_ci95": [
+            0.001183,
+            0.357012
+          ],
+          "n": 8,
+          "recall_at_5": 0.125,
+          "recall_ci95": [
+            0.022417,
+            0.470895
+          ]
+        },
+        "R": {
+          "hits": 4,
+          "mrr_at_5": 0.266667,
+          "mrr_ci95": [
+            0.066836,
+            0.648658
+          ],
+          "n": 6,
+          "recall_at_5": 0.666667,
+          "recall_ci95": [
+            0.299988,
+            0.903231
+          ]
+        }
+      },
+      "overall": {
+        "hits": 12,
+        "mrr_at_5": 0.312,
+        "mrr_ci95": [
+          0.166107,
+          0.507975
+        ],
+        "n": 25,
+        "recall_at_5": 0.48,
+        "recall_ci95": [
+          0.30031,
+          0.665018
+        ]
+      }
+    },
+    "status": "pass"
+  },
+  "schema": "session-weaver.benchmark.v1",
+  "timings_seconds": {
+    "benchmark": 23.257853
+  },
+  "verdict": "investigate",
+  "visible_subset": {
+    "categories": {
+      "K": {
+        "hits": 9,
+        "mrr_at_5": 0.621212,
+        "mrr_ci95": [
+          0.341058,
+          0.838617
+        ],
+        "n": 11,
+        "recall_at_5": 0.818182,
+        "recall_ci95": [
+          0.523014,
+          0.948633
+        ]
+      },
+      "P": {
+        "hits": 2,
+        "mrr_at_5": 0.15625,
+        "mrr_ci95": [
+          0.032809,
+          0.502727
+        ],
+        "n": 8,
+        "recall_at_5": 0.25,
+        "recall_ci95": [
+          0.071478,
+          0.59073
+        ]
+      },
+      "R": {
+        "hits": 4,
+        "mrr_at_5": 0.583333,
+        "mrr_ci95": [
+          0.241074,
+          0.860536
+        ],
+        "n": 6,
+        "recall_at_5": 0.666667,
+        "recall_ci95": [
+          0.299988,
+          0.903231
+        ]
+      }
+    },
+    "overall": {
+      "hits": 15,
+      "mrr_at_5": 0.463333,
+      "mrr_ci95": [
+        0.286163,
+        0.650272
+      ],
+      "n": 25,
+      "recall_at_5": 0.6,
+      "recall_ci95": [
+        0.407391,
+        0.765969
+      ]
+    }
+  }
+}

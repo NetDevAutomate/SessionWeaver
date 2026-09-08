@@ -9,6 +9,16 @@ may change before `1.0.0`.
 
 ### Added
 
+- Added `session-weaver bench audit-gold --db PATH` and `session-weaver bench run
+  --db PATH [--gold PATH] [--k 5] [--json] [--out DIR]`: a pre-registered,
+  corpus-posture-gated recall benchmark over the frozen 25-question K11/P8/R6 set.
+  It reports all-25 and visible-subset recall@5/MRR@5 with Wilson 95% intervals,
+  same-visibility raw-text positive control, non-gating unrestricted diagnostic,
+  concept-candidate coverage, fixed Q6 verdict bands/floors, and a separate
+  40-question corpus-verified directional paraphrase set. Live-path use is refused
+  unless explicitly read-only; maintained live proof runs exporter, ontology parity
+  rebuild, OKF import, audit, and scoring only on a SQLite Online Backup and retains
+  aggregate sanitized evidence.
 - Added `session-weaver recall "<question>" [--k N] [--project ID] [--db PATH]
   [--json]` and the `recall()` seam: concept-first, AND→OR keyword recall over
   concepts (ranked by `bm25`, ties broken by full concept ID, authorized through

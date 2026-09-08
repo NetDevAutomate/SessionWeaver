@@ -12,12 +12,21 @@ from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, BinaryIO, TextIO
+from typing import Any, BinaryIO, TextIO, cast
 from uuid import uuid4
 
 from agent_session_tools.context.scope import ScopeError
 
 from . import __version__
+from .bench import (
+    audit_gold,
+    default_gold_path,
+    load_gold,
+    render_markdown,
+    run_benchmark,
+    validate_gold,
+    write_outputs,
+)
 from .concepts import BatchResult, BindResult, ConceptService, TransitionResult
 from .harnesses import HARNESSES, parse_harness_selection
 from .installer import install_skill, status, uninstall_skill
@@ -168,6 +177,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_recall.add_argument("--project", default=None, type=_nonempty_type("--project"))
     p_recall.add_argument("--json", action="store_true", help="emit deterministic JSON")
     _db_arg(p_recall)
+
+    p_bench = sub.add_parser("bench", help="run or audit the pre-registered recall gate")
+    bench_sub = p_bench.add_subparsers(dest="bench_command", required=True)
+    p_bench_run = bench_sub.add_parser("run", help="score the frozen A6 benchmark")
+    p_bench_run.add_argument("--db", required=True, type=_nonempty_db_arg)
+    p_bench_run.add_argument("--gold", default=None, type=_nonempty_type("--gold"))
+    p_bench_run.add_argument("--k", default=5, type=_k_arg)
+    p_bench_run.add_argument("--json", action="store_true", help="emit deterministic JSON")
+    p_bench_run.add_argument("--out", default=None, type=_nonempty_type("--out"))
+    p_bench_run.add_argument(
+        "--live-ro",
+        action="store_true",
+        help="allow the live store path for an explicit read-only diagnostic",
+    )
+    p_bench_audit = bench_sub.add_parser(
+        "audit-gold", help="verify frozen gold sessions and literal corpus facts"
+    )
+    p_bench_audit.add_argument("--db", required=True, type=_nonempty_db_arg)
 
     p_concept = sub.add_parser("concept", help="manage concept lifecycle and legacy imports")
     concept_sub = p_concept.add_subparsers(dest="concept_command", required=True)
@@ -604,6 +631,47 @@ def _recall(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bench_run(args: argparse.Namespace) -> int:
+    db = Path(args.db).expanduser()
+    live_db = Path.home() / ".config" / "studyloop" / "sessions.db"
+    if db.resolve() == live_db.resolve() and not args.live_ro:
+        _emit_json(
+            {"command": "bench run", "error": "live database requires --live-ro"},
+            error=True,
+        )
+        return 2
+    try:
+        report = run_benchmark(
+            db,
+            gold_path=Path(args.gold).expanduser() if args.gold else None,
+            k=args.k,
+            live_ro=args.live_ro,
+        )
+        if args.out:
+            write_outputs(report, Path(args.out).expanduser())
+    except ValueError as exc:
+        _emit_json({"command": "bench run", "error": str(exc)}, error=True)
+        return 2
+    except Exception:
+        return _runtime_failure("bench run")
+    if args.json:
+        _emit_json(report)
+    else:
+        print(render_markdown(report), end="")
+    return cast(int, report["exit_code"])
+
+
+def _bench_audit(args: argparse.Namespace) -> int:
+    try:
+        gold = load_gold(default_gold_path())
+        validate_gold(gold)
+        report = audit_gold(Path(args.db).expanduser(), gold)
+    except Exception:
+        return _runtime_failure("bench audit-gold")
+    _emit_json(report)
+    return 1 if report["failures"] else 0
+
+
 def _ontology_rebuild(db_arg: str | None, *, incremental: bool) -> int:
     started = perf_counter()
     try:
@@ -717,6 +785,8 @@ def main(argv: list[str] | None = None) -> int:
         return _winddown(args)
     if args.command == "recall":
         return _recall(args)
+    if args.command == "bench":
+        return _bench_run(args) if args.bench_command == "run" else _bench_audit(args)
     if args.command == "concept":
         if args.concept_command in ("accept", "retire"):
             return _concept_transition(args)

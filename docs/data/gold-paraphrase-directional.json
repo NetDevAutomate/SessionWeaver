@@ -1,0 +1,49 @@
+[
+  {"id":"DP01","type":"P","question":"Why does newer-only synchronization oscillate after both peers change one session?","gold":["codex_rollout-2026-07-15T17-43-47-019f66a9-b8eb-71f0-ade9-26a6a0c46a7b"],"evidence":["%cannot converge%"]},
+  {"id":"DP02","type":"P","question":"What convergence problem appears when each machine updates the same history independently?","gold":["codex_rollout-2026-07-15T17-43-47-019f66a9-b8eb-71f0-ade9-26a6a0c46a7b"],"evidence":["%cannot converge%"]},
+  {"id":"DP03","type":"P","question":"Why is moving only the latest copy insufficient for a two-sided session edit?","gold":["codex_rollout-2026-07-15T17-43-47-019f66a9-b8eb-71f0-ade9-26a6a0c46a7b"],"evidence":["%cannot converge%"]},
+  {"id":"DP04","type":"P","question":"Which sync failure prevents independently changed replicas from reaching a stable state?","gold":["codex_rollout-2026-07-15T17-43-47-019f66a9-b8eb-71f0-ade9-26a6a0c46a7b"],"evidence":["%cannot converge%"]},
+  {"id":"DP05","type":"P","question":"What happens to eventual agreement when both laptops modify one captured conversation?","gold":["codex_rollout-2026-07-15T17-43-47-019f66a9-b8eb-71f0-ade9-26a6a0c46a7b"],"evidence":["%cannot converge%"]},
+
+  {"id":"DP06","type":"P","question":"Which reviewer consumed attempts without returning substantive findings?","gold":["agent-adde355a412e5f09c"],"evidence":["%grok%","%hollow%"]},
+  {"id":"DP07","type":"P","question":"What model produced empty review value despite repeated paid calls?","gold":["agent-adde355a412e5f09c"],"evidence":["%grok%","%hollow%"]},
+  {"id":"DP08","type":"P","question":"Who repeatedly spent the review budget while contributing no useful analysis?","gold":["agent-adde355a412e5f09c"],"evidence":["%grok%","%hollow%"]},
+  {"id":"DP09","type":"P","question":"Which council participant's review attempts were all empty shells?","gold":["agent-adde355a412e5f09c"],"evidence":["%grok%","%hollow%"]},
+  {"id":"DP10","type":"P","question":"Name the model associated with costly but content-free review retries.","gold":["agent-adde355a412e5f09c"],"evidence":["%grok%","%hollow%"]},
+
+  {"id":"DP11","type":"P","question":"Why are noninteractive Claude invocations absent from captured history?","gold":["codex_rollout-2026-06-27T01-44-04-019f0688-9bd4-7930-b375-62f82e560dce"],"evidence":["%Stop hook%","%async%"]},
+  {"id":"DP12","type":"P","question":"What lifecycle mismatch drops one-shot Claude executions from export?","gold":["codex_rollout-2026-06-27T01-44-04-019f0688-9bd4-7930-b375-62f82e560dce"],"evidence":["%Stop hook%","%async%"]},
+  {"id":"DP13","type":"P","question":"Which asynchronous callback behavior explains missing headless Claude sessions?","gold":["codex_rollout-2026-06-27T01-44-04-019f0688-9bd4-7930-b375-62f82e560dce"],"evidence":["%Stop hook%","%async%"]},
+  {"id":"DP14","type":"P","question":"Why does a fire-and-exit Claude command evade the transcript database?","gold":["codex_rollout-2026-06-27T01-44-04-019f0688-9bd4-7930-b375-62f82e560dce"],"evidence":["%Stop hook%","%async%"]},
+  {"id":"DP15","type":"P","question":"What prevents the capture callback from finishing for short Claude runs?","gold":["codex_rollout-2026-06-27T01-44-04-019f0688-9bd4-7930-b375-62f82e560dce"],"evidence":["%Stop hook%","%async%"]},
+
+  {"id":"DP16","type":"P","question":"Which pair of harness importers reports old rows as newly added on every repair?","gold":["agent-aaca9d9405331b551"],"evidence":["%opencode%","%pi%","%idempoten%"]},
+  {"id":"DP17","type":"P","question":"What two exporters violate repeat-run stability during inspection?","gold":["agent-aaca9d9405331b551"],"evidence":["%opencode%","%pi%","%idempoten%"]},
+  {"id":"DP18","type":"P","question":"Which capture sources keep recounting identical records as additions?","gold":["agent-aaca9d9405331b551"],"evidence":["%opencode%","%pi%","%idempoten%"]},
+  {"id":"DP19","type":"P","question":"Name the two session exporters whose repair pass is not stable across reruns.","gold":["agent-aaca9d9405331b551"],"evidence":["%opencode%","%pi%","%idempoten%"]},
+  {"id":"DP20","type":"P","question":"Which adapters repeatedly claim duplicate historical inserts?","gold":["agent-aaca9d9405331b551"],"evidence":["%opencode%","%pi%","%idempoten%"]},
+
+  {"id":"DP21","type":"P","question":"How are cleaned-up rows prevented from returning through another replica?","gold":["agent-a4a4696d918bc6f2a"],"evidence":["%resurrect%","%empty%"]},
+  {"id":"DP22","type":"P","question":"What safeguard keeps a peer from restoring deliberately removed history?","gold":["agent-a4a4696d918bc6f2a"],"evidence":["%resurrect%","%empty%"]},
+  {"id":"DP23","type":"P","question":"How does cleanup remain durable when another machine still has old records?","gold":["agent-a4a4696d918bc6f2a"],"evidence":["%resurrect%","%empty%"]},
+  {"id":"DP24","type":"P","question":"Which deletion rule stops stale replicas repopulating erased sessions?","gold":["agent-a4a4696d918bc6f2a"],"evidence":["%resurrect%","%empty%"]},
+  {"id":"DP25","type":"P","question":"What must sync preserve so intentionally absent data stays absent?","gold":["agent-a4a4696d918bc6f2a"],"evidence":["%resurrect%","%empty%"]},
+
+  {"id":"DP26","type":"P","question":"What protects uncommitted repository edits during a wheel build?","gold":["agent-a7ef5c925d96032ca"],"evidence":["%dirty%","%refuse%build%"]},
+  {"id":"DP27","type":"P","question":"Why should packaging stop when the checkout has local modifications?","gold":["agent-a7ef5c925d96032ca"],"evidence":["%dirty%","%refuse%build%"]},
+  {"id":"DP28","type":"P","question":"Which precondition prevents an automated build from overwriting active work?","gold":["agent-a7ef5c925d96032ca"],"evidence":["%dirty%","%refuse%build%"]},
+  {"id":"DP29","type":"P","question":"How does the packaging workflow fail safely around a modified tree?","gold":["agent-a7ef5c925d96032ca"],"evidence":["%dirty%","%refuse%build%"]},
+  {"id":"DP30","type":"P","question":"What dirty-checkout policy keeps an agent from damaging edits while producing a wheel?","gold":["agent-a7ef5c925d96032ca"],"evidence":["%dirty%","%refuse%build%"]},
+
+  {"id":"DP31","type":"P","question":"What focus limit constrains the number of simultaneous learning topics?","gold":["grok_019f55c4-f9a2-7102-9597-7ca17772f4e1"],"evidence":["%MAX_ACTIVE_TOPICS%"]},
+  {"id":"DP32","type":"P","question":"How many subjects may remain in the active study queue at once?","gold":["grok_019f55c4-f9a2-7102-9597-7ca17772f4e1"],"evidence":["%MAX_ACTIVE_TOPICS%"]},
+  {"id":"DP33","type":"P","question":"Which cap avoids overloading the learner with concurrent areas?","gold":["grok_019f55c4-f9a2-7102-9597-7ca17772f4e1"],"evidence":["%MAX_ACTIVE_TOPICS%"]},
+  {"id":"DP34","type":"P","question":"What active-backlog rule supports attention management?","gold":["grok_019f55c4-f9a2-7102-9597-7ca17772f4e1"],"evidence":["%MAX_ACTIVE_TOPICS%"]},
+  {"id":"DP35","type":"P","question":"Where is the maximum concurrent topic count defined?","gold":["grok_019f55c4-f9a2-7102-9597-7ca17772f4e1"],"evidence":["%MAX_ACTIVE_TOPICS%"]},
+
+  {"id":"DP36","type":"P","question":"Why was an additional pristine database snapshot made before multi-host probes?","gold":["agent-a6b222bb0e631d27c"],"evidence":["%divergent%","%second Mac%"]},
+  {"id":"DP37","type":"P","question":"What risk justified preserving another museum copy before testing the second laptop?","gold":["agent-a6b222bb0e631d27c"],"evidence":["%divergent%","%second Mac%"]},
+  {"id":"DP38","type":"P","question":"Why retain two untouched snapshots ahead of cross-machine synchronization experiments?","gold":["agent-a6b222bb0e631d27c"],"evidence":["%divergent%","%second Mac%"]},
+  {"id":"DP39","type":"P","question":"What did the extra archival copy protect against during dual-computer validation?","gold":["agent-a6b222bb0e631d27c"],"evidence":["%divergent%","%second Mac%"]},
+  {"id":"DP40","type":"P","question":"Why freeze another known-good store before allowing replicas to diverge?","gold":["agent-a6b222bb0e631d27c"],"evidence":["%divergent%","%second Mac%"]}
+]
