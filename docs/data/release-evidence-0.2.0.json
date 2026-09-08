@@ -1,7 +1,7 @@
 {
   "schema": "sessionweaver-release-evidence-v1",
   "version": "0.2.0",
-  "state": "prepared-not-release-authorized",
+  "state": "released",
   "agent_session_tools": {
     "sha": "0adeb6c8ef958e453abe5b66d0bca39fdad6c309",
     "exporter_fix_ancestor": "7f9a19ec03a592b3892ab60f2bcca316a1430d4a",
@@ -14,41 +14,50 @@
     }
   },
   "session_weaver": {
-    "tested_sha": "7366a238310fa6bb413c6f9b298bd3543ffd5fe2+dirty-a7",
-    "merge_sha": null
+    "tested_sha": "d6a1605988b6758eefec21ef4d10a2a79de35b2f",
+    "merge_sha": "71a310cd90ad69194e19740ef1ec11f60c69cb13",
+    "author_policy_hotfix_sha": "817910686fa35fb8d3b68b56edd8c8532e367129",
+    "release_sha": "fe15996c933fe381724735c89f77e4002f6f942a",
+    "tag": "v0.2.0"
   },
   "artifacts": {
     "wheel": {
-      "sha256": null,
-      "clean_environment": null,
-      "receipt": "CI package artifact (pending exact-SHA run)"
+      "sha256": "8fa3e892fc0e8032268561ff67992200d42a2cca3113167b31e7238a70ec2f90",
+      "clean_environment": "CI clean uv venv (CPython 3.12), installed from artifact file URL",
+      "receipt": "session-weaver-package-fe15996c933fe381724735c89f77e4002f6f942a/wheel-install-receipt.json"
     },
     "sdist": {
-      "sha256": null,
-      "clean_environment": null,
-      "receipt": "CI package artifact (pending exact-SHA run)"
-    }
+      "sha256": "2a2d2608d3ae34ba2eaa677c15a58e99070c162d0b5239539f1b0aef26e383b5",
+      "clean_environment": "independent CI clean uv venv (CPython 3.12), installed from artifact file URL",
+      "receipt": "session-weaver-package-fe15996c933fe381724735c89f77e4002f6f942a/sdist-install-receipt.json"
+    },
+    "installed_session_export_entry_point": "agent_session_tools.export_sessions:main"
   },
   "e2e": {
     "fixture": "tests/test_workflow_e2e.py::test_representative_fixture_workflow",
-    "live": "docs/data/workflow-e2e-baseline.json",
+    "live": "test_representative_live_online_backup_workflow passed at release SHA fe15996c (1 passed, Online Backup, source sentinels unchanged)",
     "source_sentinels_unchanged": true
   },
   "ci": {
-    "branch_run_id": null,
-    "merge_run_id": null,
-    "exact_merge_sha_green": false
+    "branch_run_id": 34209499173,
+    "merge_run_id": 34209919192,
+    "hotfix_branch_run_id": 34213596831,
+    "hotfix_main_run_id": 34214217214,
+    "tag_run_id": 34214542189,
+    "exact_merge_sha_green": true
   },
   "independent_review": {
-    "disposition": null,
-    "critical_important_open": null
+    "disposition": "final whole-branch review NEEDS_CHANGES resolved by approved fix wave d6a1605; scoped rereview APPROVE; merge-author hotfix independently reviewed APPROVE",
+    "critical_important_open": 0
   },
   "branch_protection": {
     "documented": "docs/RELEASING.md",
-    "applied": false
+    "applied": true,
+    "required_checks": ["gates", "package", "pre-commit", "fixture-e2e"],
+    "tag_ruleset": "protect-release-tags (id 22531443, refs/tags/v*, deletion/non_fast_forward/update blocked)"
   },
   "release_guard": {
-    "local_result": "pass (prospective tag/SHA inputs on dirty A7 worktree)",
-    "tag_result": null
+    "local_result": "pass (prospective, tag v0.2.0 against green main SHA fe15996c, run 34214217214 jobs)",
+    "tag_result": "pass (release-guard job success in tag run 34214542189 at fe15996c)"
   }
 }
