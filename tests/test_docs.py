@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -12,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 SKILL = ROOT / "SKILL.md"
 CLAIMS_AUDIT = ROOT / "docs" / "claims-audit.md"
+ARCHITECTURE_SPEC = ROOT / "docs" / "architecture" / "phase2-architecture.architecture.json"
+DATAFLOW_SPEC = ROOT / "docs" / "architecture" / "phase2-dataflow.dataflow.json"
+SEQUENCE_SPEC = ROOT / "docs" / "architecture" / "phase2-winddown-sequence.sequence.json"
 
 EXPECTED_COMMANDS = {
     "install",
@@ -134,6 +138,88 @@ def test_claims_audit_maps_public_claims_to_maintained_evidence() -> None:
     assert "INVESTIGATE" in audit
     assert "report-only" in audit
     assert "Phase B" in audit
+    for claim in (
+        "authoritative concept state",
+        "disposable Markdown",
+        "9/9 showcase checks",
+        "delivery receipt",
+        "visual-check receipt",
+        "independent perceptual review",
+        "R100",
+    ):
+        assert claim in audit
+
+
+def test_target_state_diagrams_preserve_authoritative_concept_direction() -> None:
+    architecture = json.loads(ARCHITECTURE_SPEC.read_text(encoding="utf-8"))
+    architecture_nodes = {
+        component["id"]: component["label"] for component in architecture["components"]
+    }
+    architecture_edges = {
+        (
+            architecture_nodes[connection["from"]],
+            architecture_nodes[connection["to"]],
+            connection.get("label", ""),
+        )
+        for connection in architecture["connections"]
+    }
+    assert ("Session Store", "Wind-down / Import", "cited session evidence") in architecture_edges
+    assert (
+        "Wind-down / Import",
+        "Concepts + Sidecar",
+        "transactional writes",
+    ) in architecture_edges
+    assert (
+        "Concepts + Sidecar",
+        "Concept Project",
+        "reads authoritative state",
+    ) in architecture_edges
+    assert (
+        "Concept Project",
+        "Disposable Markdown",
+        "emits disposable files",
+    ) in architecture_edges
+    assert ("Session Store", "Tier-1 Ontology", "derives diagnostics") in architecture_edges
+    assert not any(
+        source in {"Concept Project", "Disposable Markdown"} and target == "Concepts + Sidecar"
+        for source, target, _label in architecture_edges
+    )
+
+    dataflow = json.loads(DATAFLOW_SPEC.read_text(encoding="utf-8"))
+    dataflow_nodes = {node["id"]: node["label"] for node in dataflow["nodes"]}
+    dataflow_edges = {
+        (
+            dataflow_nodes[flow["from"]],
+            dataflow_nodes[flow["to"]],
+            flow["label"],
+        )
+        for flow in dataflow["flows"]
+    }
+    assert ("Session Store", "Wind-down / Import", "bind or import") in dataflow_edges
+    assert ("Wind-down / Import", "Concepts + Sidecar", "transactional write") in dataflow_edges
+    assert ("Concepts + Sidecar", "SessionWeaver Recall", "retrieve candidates") in dataflow_edges
+    assert ("Concepts + Sidecar", "Disposable Markdown", "concept project") in dataflow_edges
+    assert ("Session Store", "Tier-1 Ontology", "derive diagnostics") in dataflow_edges
+    assert not any(
+        source == "Tier-1 Ontology" and target == "SessionWeaver Recall"
+        for source, target, _label in dataflow_edges
+    )
+
+    sequence = json.loads(SEQUENCE_SPEC.read_text(encoding="utf-8"))
+    participants = {
+        participant["id"]: participant["label"] for participant in sequence["participants"]
+    }
+    assert "OKF Store" not in participants.values()
+    assert "Concepts + Sidecar" in participants.values()
+    messages = {
+        (
+            participants[message["from"]],
+            participants[message["to"]],
+            message["label"],
+        )
+        for message in sequence["messages"]
+    }
+    assert ("Citation Binder", "Concepts + Sidecar", "commit bound proposal") in messages
 
 
 def test_public_markdown_local_links_resolve() -> None:

@@ -16,9 +16,11 @@ from time import perf_counter
 from typing import Any, BinaryIO, TextIO, cast
 from uuid import uuid4
 
+from agent_session_tools.context.public import open_context
 from agent_session_tools.context.scope import ScopeError
 
 from . import __version__
+from .authorization import authorized_concepts
 from .bench import (
     audit_gold,
     default_gold_path,
@@ -764,25 +766,17 @@ def _doctor_concept_sidecar(conn: sqlite3.Connection) -> int:
     return 0
 
 
-def _known_recall_term(conn: sqlite3.Connection) -> str | None:
-    sources: list[str] = []
-    with suppress(sqlite3.DatabaseError):
-        sources.extend(
-            " ".join(str(value) for value in row if value is not None)
-            for row in conn.execute(
-                "SELECT title,statement FROM context_concept_fts ORDER BY concept_id LIMIT 20"
+def _known_recall_term(db: Path) -> str | None:
+    with open_context(db) as context:
+        visible_concepts = authorized_concepts(context, project=context.project)
+        for authorized in visible_concepts[:20]:
+            root = authorized.root
+            source = " ".join(
+                str(root[field]) for field in ("title", "statement") if root[field] is not None
             )
-        )
-    sources.extend(
-        str(row[0])
-        for row in conn.execute(
-            "SELECT content FROM messages WHERE content IS NOT NULL ORDER BY id LIMIT 20"
-        )
-    )
-    for source in sources:
-        terms = plan(source).terms
-        if terms:
-            return terms[0]
+            terms = plan(source).terms
+            if terms:
+                return terms[0]
     return None
 
 
@@ -863,7 +857,7 @@ def _doctor(db_arg: str | None) -> int:
                     print("FAIL  ontology inspection failed")
                     failures += 1
                 failures += _doctor_concept_sidecar(conn)
-                recall_term = _known_recall_term(conn)
+                recall_term = _known_recall_term(db)
             failures += _doctor_recall(db, recall_term)
         except sqlite3.Error as exc:
             print(f"FAIL  session store {db}: unreadable ({exc})")

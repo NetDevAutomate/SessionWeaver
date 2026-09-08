@@ -5034,42 +5034,43 @@
         <text x="100" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">01 / Ingest</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="stage" data-composition-frame-id="1" x="231" y="46" width="168" height="440" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="315" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">02 / Store</text>
+        <text x="315" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">02 / Canonical</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="stage" data-composition-frame-id="2" x="446" y="46" width="168" height="440" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="530" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">03 / Project</text>
+        <text x="530" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">03 / Bind</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="stage" data-composition-frame-id="3" x="661" y="46" width="168" height="440" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="745" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">04 / Retrieve</text>
+        <text x="745" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">04 / Authoritative</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="stage" data-composition-frame-id="4" x="876" y="46" width="168" height="440" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="960" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">05 / Gate</text>
+        <text x="960" y="68" class="t-dim" font-size="9" font-weight="600" text-anchor="middle">05 / Consume</text>
 
         <!-- Flow paths -->
-        <path data-edge-from="p2d_studyloop_sessions" data-edge-to="p2d_session_store" data-edge-label="session-export" data-edge-key="0" data-edge-id="p2d_export_input" data-composition-points="156,157;259,157" d="M 156 157 L 259 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="p2d_session_store" data-edge-to="p2d_concept_sidecar" data-edge-label="project evidence" data-edge-key="1" data-edge-id="p2d_project_concepts" data-composition-points="371,157;474,157" d="M 371 157 L 474 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="p2d_session_store" data-edge-to="p2d_ontology_branch" data-edge-label="derive diagnostics" data-edge-key="2" data-edge-id="p2d_derive_diagnostics" data-composition-points="371,157;422.5,157;422.5,385;474,385" d="M 371 157 L 422.5 157 L 422.5 385 L 474 385" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="p2d_concept_sidecar" data-edge-to="p2d_sessionweaver_recall" data-edge-label="retrieve candidates" data-edge-key="3" data-edge-id="p2d_recall_candidates" data-composition-points="586,157;679,157" d="M 586 157 L 679 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="p2d_sessionweaver_recall" data-edge-to="p2d_benchmark_gate" data-edge-label="score k=5" data-edge-key="4" data-edge-id="p2d_measure_gate" data-composition-points="811,157;904,157" d="M 811 157 L 904 157" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="p2d_studyloop_sessions" data-edge-to="p2d_session_store" data-edge-label="session-export" data-edge-key="0" data-edge-id="p2d_export_input" data-composition-points="156,157;255,157" d="M 156 157 L 255 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="p2d_session_store" data-edge-to="p2d_concept_writer" data-edge-label="bind or import" data-edge-key="1" data-edge-id="p2d_bind_or_import" data-composition-points="375,157;462,157" d="M 375 157 L 462 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="p2d_concept_writer" data-edge-to="p2d_concept_sidecar" data-edge-label="transactional write" data-edge-key="2" data-edge-id="p2d_commit_concepts" data-composition-points="598,157;677,157" d="M 598 157 L 677 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="p2d_concept_sidecar" data-edge-to="p2d_sessionweaver_recall" data-edge-label="retrieve candidates" data-edge-key="3" data-edge-id="p2d_recall_candidates" data-composition-points="813,157;892,157" d="M 813 157 L 892 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="p2d_concept_sidecar" data-edge-to="p2d_markdown_projection" data-edge-label="concept project" data-edge-key="4" data-edge-id="p2d_project_markdown" data-composition-points="745,186;745,356" d="M 745 186 L 745 356" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="p2d_session_store" data-edge-to="p2d_ontology_branch" data-edge-label="derive diagnostics" data-edge-key="5" data-edge-id="p2d_derive_diagnostics" data-composition-points="375,157;424.5,157;424.5,385;474,385" d="M 375 157 L 424.5 157 L 424.5 385 L 474 385" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="p2d_sessionweaver_recall" data-edge-to="p2d_benchmark_gate" data-edge-label="score k=5" data-edge-key="6" data-edge-id="p2d_measure_gate" data-composition-points="960,186;960,356" d="M 960 186 L 960 356" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
 
         <!-- Nodes -->
-        <g id="node-p2d_studyloop_sessions" data-node-id="p2d_studyloop_sessions" data-node-label="StudyLoop Sessions" tabindex="0" role="button" aria-label="Focus StudyLoop Sessions, session-export input, 01 / Ingest" aria-pressed="false" data-node-kind="external" data-node-sublabel="session-export input" data-node-context="01 / Ingest">
-          <title>StudyLoop Sessions · session-export input · 01 / Ingest</title>
+        <g id="node-p2d_studyloop_sessions" data-node-id="p2d_studyloop_sessions" data-node-label="StudyLoop Sessions" tabindex="0" role="button" aria-label="Focus StudyLoop Sessions, 01 / Ingest" aria-pressed="false" data-node-kind="external" data-node-context="01 / Ingest">
+          <title>StudyLoop Sessions · 01 / Ingest</title>
           <rect x="44" y="128" width="112" height="58" rx="6" class="c-mask"/>
           <rect x="44" y="128" width="112" height="58" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(50 134) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="100" y="149" class="t-primary" font-size="9.6" font-weight="600" text-anchor="middle">StudyLoop Sessions</text>
-          <text data-detail="context" x="100" y="165" class="t-muted" font-size="7" text-anchor="middle">session-export input</text>
+          <text data-node-label="" x="100" y="149" class="t-primary" font-size="9.6" font-weight="600" text-anchor="middle">StudyLoop Sessions</text>
         </g>
 
-        <g id="node-p2d_session_store" data-node-id="p2d_session_store" data-node-label="Session Store" tabindex="0" role="button" aria-label="Focus Session Store, canonical messages, 02 / Store" aria-pressed="false" data-node-kind="database" data-node-sublabel="canonical messages" data-node-context="02 / Store">
-          <title>Session Store · canonical messages · 02 / Store</title>
-          <rect x="259" y="128" width="112" height="58" rx="6" class="c-mask"/>
-          <rect x="259" y="128" width="112" height="58" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(265 134) scale(0.6875)">
+        <g id="node-p2d_session_store" data-node-id="p2d_session_store" data-node-label="Session Store" tabindex="0" role="button" aria-label="Focus Session Store, canonical messages, 02 / Canonical" aria-pressed="false" data-node-kind="database" data-node-sublabel="canonical messages" data-node-context="02 / Canonical">
+          <title>Session Store · canonical messages · 02 / Canonical</title>
+          <rect x="255" y="128" width="120" height="58" rx="6" class="c-mask"/>
+          <rect x="255" y="128" width="120" height="58" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(261 134) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
@@ -5077,20 +5078,42 @@
           <text data-detail="context" x="315" y="165" class="t-muted" font-size="7" text-anchor="middle">canonical messages</text>
         </g>
 
-        <g id="node-p2d_concept_sidecar" data-node-id="p2d_concept_sidecar" data-node-label="Concepts + Sidecar" tabindex="0" role="button" aria-label="Focus Concepts + Sidecar, bound evidence + FTS, 03 / Project" aria-pressed="false" data-node-kind="database" data-node-sublabel="bound evidence + FTS" data-node-context="03 / Project">
-          <title>Concepts + Sidecar · bound evidence + FTS · 03 / Project</title>
-          <rect x="474" y="128" width="112" height="58" rx="6" class="c-mask"/>
-          <rect x="474" y="128" width="112" height="58" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(480 134) scale(0.6875)">
+        <g id="node-p2d_concept_writer" data-node-id="p2d_concept_writer" data-node-label="Wind-down / Import" tabindex="0" role="button" aria-label="Focus Wind-down / Import, citation binding, 03 / Bind" aria-pressed="false" data-node-kind="backend" data-node-sublabel="citation binding" data-node-context="03 / Bind">
+          <title>Wind-down / Import · citation binding · 03 / Bind</title>
+          <rect x="462" y="128" width="136" height="58" rx="6" class="c-mask"/>
+          <rect x="462" y="128" width="136" height="58" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(468 134) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="530" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Wind-down / Import</text>
+          <text data-detail="context" x="530" y="165" class="t-muted" font-size="7" text-anchor="middle">citation binding</text>
+        </g>
+
+        <g id="node-p2d_concept_sidecar" data-node-id="p2d_concept_sidecar" data-node-label="Concepts + Sidecar" tabindex="0" role="button" aria-label="Focus Concepts + Sidecar, authoritative SQLite + FTS, 04 / Authoritative" aria-pressed="false" data-node-kind="database" data-node-sublabel="authoritative SQLite + FTS" data-node-context="04 / Authoritative">
+          <title>Concepts + Sidecar · authoritative SQLite + FTS · 04 / Authoritative</title>
+          <rect x="677" y="128" width="136" height="58" rx="6" class="c-mask"/>
+          <rect x="677" y="128" width="136" height="58" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(683 134) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="530" y="149" class="t-primary" font-size="9.6" font-weight="600" text-anchor="middle">Concepts + Sidecar</text>
-          <text data-detail="context" x="530" y="165" class="t-muted" font-size="7" text-anchor="middle">bound evidence + FTS</text>
+          <text data-node-label="" data-detail-anchor="" x="745" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Concepts + Sidecar</text>
+          <text data-detail="context" x="745" y="165" class="t-muted" font-size="7" text-anchor="middle">authoritative SQLite + FTS</text>
         </g>
 
-        <g id="node-p2d_ontology_branch" data-node-id="p2d_ontology_branch" data-node-label="Tier-1 Ontology" tabindex="0" role="button" aria-label="Focus Tier-1 Ontology, parity diagnostics only, 03 / Project" aria-pressed="false" data-node-kind="database" data-node-sublabel="parity diagnostics only" data-node-tag="not a recall input" data-node-context="03 / Project">
-          <title>Tier-1 Ontology · parity diagnostics only · 03 / Project · not a recall input</title>
+        <g id="node-p2d_sessionweaver_recall" data-node-id="p2d_sessionweaver_recall" data-node-label="SessionWeaver Recall" tabindex="0" role="button" aria-label="Focus SessionWeaver Recall, concept-first + fallback, 05 / Consume" aria-pressed="false" data-node-kind="backend" data-node-sublabel="concept-first + fallback" data-node-context="05 / Consume">
+          <title>SessionWeaver Recall · concept-first + fallback · 05 / Consume</title>
+          <rect x="892" y="128" width="136" height="58" rx="6" class="c-mask"/>
+          <rect x="892" y="128" width="136" height="58" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(898 134) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="960" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">SessionWeaver Recall</text>
+          <text data-detail="context" x="960" y="165" class="t-muted" font-size="7" text-anchor="middle">concept-first + fallback</text>
+        </g>
+
+        <g id="node-p2d_ontology_branch" data-node-id="p2d_ontology_branch" data-node-label="Tier-1 Ontology" tabindex="0" role="button" aria-label="Focus Tier-1 Ontology, derived diagnostics only, 03 / Bind" aria-pressed="false" data-node-kind="database" data-node-sublabel="derived diagnostics only" data-node-tag="not a recall input" data-node-context="03 / Bind">
+          <title>Tier-1 Ontology · derived diagnostics only · 03 / Bind · not a recall input</title>
           <rect x="474" y="356" width="112" height="58" rx="6" class="c-mask"/>
           <rect x="474" y="356" width="112" height="58" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(480 362) scale(0.6875)">
@@ -5098,32 +5121,33 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="530" y="377" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Tier-1 Ontology</text>
-          <text data-detail="context" x="530" y="393" class="t-muted" font-size="7" text-anchor="middle">parity diagnostics only</text>
+          <text data-detail="context" x="530" y="393" class="t-muted" font-size="7" text-anchor="middle">derived diagnostics only</text>
         <text data-detail="fine" x="530" y="403" class="t-database" font-size="7" text-anchor="middle">not a recall input</text>
         </g>
 
-        <g id="node-p2d_sessionweaver_recall" data-node-id="p2d_sessionweaver_recall" data-node-label="SessionWeaver Recall" tabindex="0" role="button" aria-label="Focus SessionWeaver Recall, concept-first + fallback, 04 / Retrieve" aria-pressed="false" data-node-kind="backend" data-node-sublabel="concept-first + fallback" data-node-context="04 / Retrieve">
-          <title>SessionWeaver Recall · concept-first + fallback · 04 / Retrieve</title>
-          <rect x="679" y="128" width="132" height="58" rx="6" class="c-mask"/>
-          <rect x="679" y="128" width="132" height="58" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(685 134) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+        <g id="node-p2d_markdown_projection" data-node-id="p2d_markdown_projection" data-node-label="Disposable Markdown" tabindex="0" role="button" aria-label="Focus Disposable Markdown, regenerable projection, 04 / Authoritative" aria-pressed="false" data-node-kind="external" data-node-sublabel="regenerable projection" data-node-context="04 / Authoritative">
+          <title>Disposable Markdown · regenerable projection · 04 / Authoritative</title>
+          <rect x="677" y="356" width="136" height="58" rx="6" class="c-mask"/>
+          <rect x="677" y="356" width="136" height="58" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(683 362) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">SessionWeaver Recall</text>
-          <text data-detail="context" x="745" y="165" class="t-muted" font-size="7" text-anchor="middle">concept-first + fallback</text>
+          <text data-node-label="" data-detail-anchor="" x="745" y="377" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Disposable Markdown</text>
+          <text data-detail="context" x="745" y="393" class="t-muted" font-size="7" text-anchor="middle">regenerable projection</text>
         </g>
 
-        <g id="node-p2d_benchmark_gate" data-node-id="p2d_benchmark_gate" data-node-label="Benchmark Gate" tabindex="0" role="button" aria-label="Focus Benchmark Gate, all-25 recall@5 0.60, 05 / Gate" aria-pressed="false" data-node-kind="security" data-node-sublabel="all-25 recall@5 0.60" data-node-tag="INVESTIGATE" data-node-context="05 / Gate">
-          <title>Benchmark Gate · all-25 recall@5 0.60 · 05 / Gate · INVESTIGATE</title>
-          <rect x="904" y="128" width="112" height="58" rx="6" class="c-mask"/>
-          <rect x="904" y="128" width="112" height="58" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(910 134) scale(0.6875)">
+        <g id="node-p2d_benchmark_gate" data-node-id="p2d_benchmark_gate" data-node-label="Benchmark Gate" tabindex="0" role="button" aria-label="Focus Benchmark Gate, all-25 recall@5 0.60, 05 / Consume" aria-pressed="false" data-node-kind="security" data-node-sublabel="all-25 recall@5 0.60" data-node-tag="INVESTIGATE" data-node-context="05 / Consume">
+          <title>Benchmark Gate · all-25 recall@5 0.60 · 05 / Consume · INVESTIGATE</title>
+          <rect x="904" y="356" width="112" height="58" rx="6" class="c-mask"/>
+          <rect x="904" y="356" width="112" height="58" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(910 362) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="960" y="149" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Benchmark Gate</text>
-          <text data-detail="context" x="960" y="165" class="t-muted" font-size="7" text-anchor="middle">all-25 recall@5 0.60</text>
-        <text data-detail="fine" x="960" y="175" class="t-security" font-size="7" text-anchor="middle">INVESTIGATE</text>
+          <text data-node-label="" data-detail-anchor="" x="960" y="377" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Benchmark Gate</text>
+          <text data-detail="context" x="960" y="393" class="t-muted" font-size="7" text-anchor="middle">all-25 recall@5 0.60</text>
+        <text data-detail="fine" x="960" y="403" class="t-security" font-size="7" text-anchor="middle">INVESTIGATE</text>
         </g>
 
         <!-- Flow labels -->
@@ -5132,25 +5156,35 @@
           <text x="208" y="200" class="t-backend" font-size="8" text-anchor="middle">session-export</text>
         <text data-detail="fine" x="208" y="211" class="t-dim" font-size="7" text-anchor="middle">canonical session data</text>
         </g>
-        <g data-detail="context" data-edge-from="p2d_session_store" data-edge-to="p2d_concept_sidecar" data-edge-label="project evidence" data-edge-key="1" data-edge-id="p2d_project_concepts">
-          <rect x="449.9" y="189" width="100.2" height="27" rx="4" class="c-mask"/>
-          <text x="500" y="200" class="t-backend" font-size="8" text-anchor="middle">project evidence</text>
-        <text data-detail="fine" x="500" y="211" class="t-dim" font-size="7" text-anchor="middle">verbatim citations</text>
+        <g data-detail="context" data-edge-from="p2d_session_store" data-edge-to="p2d_concept_writer" data-edge-label="bind or import" data-edge-key="1" data-edge-id="p2d_bind_or_import">
+          <rect x="322.35" y="209" width="95.3" height="27" rx="4" class="c-mask"/>
+          <text x="370" y="220" class="t-backend" font-size="8" text-anchor="middle">bind or import</text>
+        <text data-detail="fine" x="370" y="231" class="t-dim" font-size="7" text-anchor="middle">verbatim evidence</text>
         </g>
-        <g data-detail="context" data-edge-from="p2d_session_store" data-edge-to="p2d_ontology_branch" data-edge-label="derive diagnostics" data-edge-key="2" data-edge-id="p2d_derive_diagnostics">
-          <rect x="372.4" y="250" width="100.2" height="27" rx="4" class="c-mask"/>
-          <text x="422.5" y="261" class="t-messagebus" font-size="8" text-anchor="middle">derive diagnostics</text>
-        <text data-detail="fine" x="422.5" y="272" class="t-dim" font-size="7" text-anchor="middle">read-only</text>
+        <g data-detail="context" data-edge-from="p2d_concept_writer" data-edge-to="p2d_concept_sidecar" data-edge-label="transactional write" data-edge-key="2" data-edge-id="p2d_commit_concepts">
+          <rect x="565.85" y="189" width="144.3" height="27" rx="4" class="c-mask"/>
+          <text x="638" y="200" class="t-backend" font-size="8" text-anchor="middle">transactional write</text>
+        <text data-detail="fine" x="638" y="211" class="t-dim" font-size="7" text-anchor="middle">authoritative concept state</text>
         </g>
         <g data-detail="context" data-edge-from="p2d_concept_sidecar" data-edge-to="p2d_sessionweaver_recall" data-edge-label="retrieve candidates" data-edge-key="3" data-edge-id="p2d_recall_candidates">
-          <rect x="580.45" y="189" width="105.1" height="27" rx="4" class="c-mask"/>
-          <text x="633" y="200" class="t-backend" font-size="8" text-anchor="middle">retrieve candidates</text>
-        <text data-detail="fine" x="633" y="211" class="t-dim" font-size="7" text-anchor="middle">concept-first</text>
+          <rect x="797.45" y="209" width="105.1" height="27" rx="4" class="c-mask"/>
+          <text x="850" y="220" class="t-backend" font-size="8" text-anchor="middle">retrieve candidates</text>
+        <text data-detail="fine" x="850" y="231" class="t-dim" font-size="7" text-anchor="middle">concept-first</text>
         </g>
-        <g data-detail="context" data-edge-from="p2d_sessionweaver_recall" data-edge-to="p2d_benchmark_gate" data-edge-label="score k=5" data-edge-key="4" data-edge-id="p2d_measure_gate">
-          <rect x="827" y="136" width="61" height="27" rx="4" class="c-mask"/>
-          <text x="857.5" y="147" class="t-security" font-size="8" text-anchor="middle">score k=5</text>
-        <text data-detail="fine" x="857.5" y="158" class="t-dim" font-size="7" text-anchor="middle">fixed gate</text>
+        <g data-detail="context" data-edge-from="p2d_concept_sidecar" data-edge-to="p2d_markdown_projection" data-edge-label="concept project" data-edge-key="4" data-edge-id="p2d_project_markdown">
+          <rect x="627.45" y="269" width="105.1" height="27" rx="4" class="c-mask"/>
+          <text x="680" y="280" class="t-messagebus" font-size="8" text-anchor="middle">concept project</text>
+        <text data-detail="fine" x="680" y="291" class="t-dim" font-size="7" text-anchor="middle">disposable Markdown</text>
+        </g>
+        <g data-detail="context" data-edge-from="p2d_session_store" data-edge-to="p2d_ontology_branch" data-edge-label="derive diagnostics" data-edge-key="5" data-edge-id="p2d_derive_diagnostics">
+          <rect x="374.4" y="250" width="100.2" height="27" rx="4" class="c-mask"/>
+          <text x="424.5" y="261" class="t-messagebus" font-size="8" text-anchor="middle">derive diagnostics</text>
+        <text data-detail="fine" x="424.5" y="272" class="t-dim" font-size="7" text-anchor="middle">read-only</text>
+        </g>
+        <g data-detail="context" data-edge-from="p2d_sessionweaver_recall" data-edge-to="p2d_benchmark_gate" data-edge-label="score k=5" data-edge-key="6" data-edge-id="p2d_measure_gate">
+          <rect x="929.5" y="249" width="61" height="27" rx="4" class="c-mask"/>
+          <text x="960" y="260" class="t-security" font-size="8" text-anchor="middle">score k=5</text>
+        <text data-detail="fine" x="960" y="271" class="t-dim" font-size="7" text-anchor="middle">fixed gate</text>
         </g>
 
         <!-- Legend -->

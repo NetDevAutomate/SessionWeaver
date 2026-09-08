@@ -6,12 +6,12 @@
   "input": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-architecture.architecture.json",
   "output": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-architecture.html",
   "specification": {
-    "sha256": "4bec73e4e11b488a4331e8f7c3930bfe940cccbb1a8c6a9df7717cbda3ca7df9",
-    "bytes": 3419
+    "sha256": "f9d35c08ac93b669a7784cb6d497a937403d629161df09c67b8b63ea08f2849c",
+    "bytes": 3918
   },
   "artifact": {
-    "sha256": "fae51d9311c8348123f42449b003c2212110f5e3484082ce9ab44c38fb6747df",
-    "bytes": 710658
+    "sha256": "640166da9163fa05535070a18bbf16038dcc61a75b149b683c8daca70596f7b6",
+    "bytes": 716656
   },
   "validation": {
     "checksPassed": 9,

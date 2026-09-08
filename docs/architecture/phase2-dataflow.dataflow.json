@@ -8,110 +8,24 @@
     "quality_profile": "showcase",
     "viewBox": [1080, 560]
   },
-  "stages": [
-    {"label": "Ingest"},
-    {"label": "Store"},
-    {"label": "Project"},
-    {"label": "Retrieve"},
-    {"label": "Gate"}
-  ],
+  "stages": [{"label": "Ingest"}, {"label": "Canonical"}, {"label": "Bind"}, {"label": "Authoritative"}, {"label": "Consume"}],
   "nodes": [
-    {
-      "id": "p2d_studyloop_sessions",
-      "type": "external",
-      "label": "StudyLoop Sessions",
-      "sublabel": "session-export input",
-      "stage": 0,
-      "row": 0
-    },
-    {
-      "id": "p2d_session_store",
-      "type": "database",
-      "label": "Session Store",
-      "sublabel": "canonical messages",
-      "stage": 1,
-      "row": 0
-    },
-    {
-      "id": "p2d_concept_sidecar",
-      "type": "database",
-      "label": "Concepts + Sidecar",
-      "sublabel": "bound evidence + FTS",
-      "stage": 2,
-      "row": 0
-    },
-    {
-      "id": "p2d_ontology_branch",
-      "type": "database",
-      "label": "Tier-1 Ontology",
-      "sublabel": "parity diagnostics only",
-      "tag": "not a recall input",
-      "stage": 2,
-      "row": 2
-    },
-    {
-      "id": "p2d_sessionweaver_recall",
-      "type": "backend",
-      "label": "SessionWeaver Recall",
-      "sublabel": "concept-first + fallback",
-      "stage": 3,
-      "row": 0,
-      "width": 132
-    },
-    {
-      "id": "p2d_benchmark_gate",
-      "type": "security",
-      "label": "Benchmark Gate",
-      "sublabel": "all-25 recall@5 0.60",
-      "tag": "INVESTIGATE",
-      "stage": 4,
-      "row": 0
-    }
+    {"id": "p2d_studyloop_sessions", "type": "external", "label": "StudyLoop Sessions", "stage": 0, "row": 0},
+    {"id": "p2d_session_store", "type": "database", "label": "Session Store", "sublabel": "canonical messages", "stage": 1, "row": 0, "width": 120},
+    {"id": "p2d_concept_writer", "type": "backend", "label": "Wind-down / Import", "sublabel": "citation binding", "stage": 2, "row": 0, "width": 136},
+    {"id": "p2d_concept_sidecar", "type": "database", "label": "Concepts + Sidecar", "sublabel": "authoritative SQLite + FTS", "stage": 3, "row": 0, "width": 136},
+    {"id": "p2d_sessionweaver_recall", "type": "backend", "label": "SessionWeaver Recall", "sublabel": "concept-first + fallback", "stage": 4, "row": 0, "width": 136},
+    {"id": "p2d_ontology_branch", "type": "database", "label": "Tier-1 Ontology", "sublabel": "derived diagnostics only", "tag": "not a recall input", "stage": 2, "row": 2},
+    {"id": "p2d_markdown_projection", "type": "external", "label": "Disposable Markdown", "sublabel": "regenerable projection", "stage": 3, "row": 2, "width": 136},
+    {"id": "p2d_benchmark_gate", "type": "security", "label": "Benchmark Gate", "sublabel": "all-25 recall@5 0.60", "tag": "INVESTIGATE", "stage": 4, "row": 2}
   ],
   "flows": [
-    {
-      "id": "p2d_export_input",
-      "from": "p2d_studyloop_sessions",
-      "to": "p2d_session_store",
-      "label": "session-export",
-      "classification": "canonical session data",
-      "variant": "emphasis",
-      "labelAt": [208, 200]
-    },
-    {
-      "id": "p2d_project_concepts",
-      "from": "p2d_session_store",
-      "to": "p2d_concept_sidecar",
-      "label": "project evidence",
-      "classification": "verbatim citations",
-      "variant": "emphasis",
-      "route": "straight",
-      "labelAt": [500, 200]
-    },
-    {
-      "id": "p2d_derive_diagnostics",
-      "from": "p2d_session_store",
-      "to": "p2d_ontology_branch",
-      "label": "derive diagnostics",
-      "classification": "read-only",
-      "variant": "dashed"
-    },
-    {
-      "id": "p2d_recall_candidates",
-      "from": "p2d_concept_sidecar",
-      "to": "p2d_sessionweaver_recall",
-      "label": "retrieve candidates",
-      "classification": "concept-first",
-      "variant": "emphasis",
-      "labelAt": [633, 200]
-    },
-    {
-      "id": "p2d_measure_gate",
-      "from": "p2d_sessionweaver_recall",
-      "to": "p2d_benchmark_gate",
-      "label": "score k=5",
-      "classification": "fixed gate",
-      "variant": "security"
-    }
+    {"id": "p2d_export_input", "from": "p2d_studyloop_sessions", "to": "p2d_session_store", "label": "session-export", "classification": "canonical session data", "variant": "emphasis", "route": "straight", "labelAt": [208, 200]},
+    {"id": "p2d_bind_or_import", "from": "p2d_session_store", "to": "p2d_concept_writer", "label": "bind or import", "classification": "verbatim evidence", "variant": "emphasis", "route": "straight", "labelAt": [370, 220]},
+    {"id": "p2d_commit_concepts", "from": "p2d_concept_writer", "to": "p2d_concept_sidecar", "label": "transactional write", "classification": "authoritative concept state", "variant": "emphasis", "route": "straight", "labelAt": [638, 200]},
+    {"id": "p2d_recall_candidates", "from": "p2d_concept_sidecar", "to": "p2d_sessionweaver_recall", "label": "retrieve candidates", "classification": "concept-first", "variant": "emphasis", "route": "straight", "labelAt": [850, 220]},
+    {"id": "p2d_project_markdown", "from": "p2d_concept_sidecar", "to": "p2d_markdown_projection", "label": "concept project", "classification": "disposable Markdown", "variant": "dashed", "labelAt": [680, 280]},
+    {"id": "p2d_derive_diagnostics", "from": "p2d_session_store", "to": "p2d_ontology_branch", "label": "derive diagnostics", "classification": "read-only", "variant": "dashed"},
+    {"id": "p2d_measure_gate", "from": "p2d_sessionweaver_recall", "to": "p2d_benchmark_gate", "label": "score k=5", "classification": "fixed gate", "variant": "security", "labelAt": [960, 260]}
   ]
 }

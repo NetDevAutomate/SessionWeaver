@@ -35,10 +35,10 @@
       "sublabel": "citation_binding: machine-confirmed"
     },
     {
-      "id": "p2s_okf_store",
+      "id": "p2s_concept_store",
       "type": "database",
-      "label": "OKF Store",
-      "sublabel": "model_authorship: model-proposed"
+      "label": "Concepts + Sidecar",
+      "sublabel": "transactional SQLite authority"
     }
   ],
   "messages": [
@@ -93,17 +93,17 @@
     {
       "id": "p2s_store_proposal",
       "from": "p2s_citation_binder",
-      "to": "p2s_okf_store",
+      "to": "p2s_concept_store",
       "y": 410,
-      "label": "write bound proposal",
+      "label": "commit bound proposal",
       "variant": "emphasis"
     },
     {
       "id": "p2s_return_summary",
-      "from": "p2s_okf_store",
+      "from": "p2s_concept_store",
       "to": "p2s_agent_author",
       "y": 450,
-      "label": "stored concepts",
+      "label": "transaction committed",
       "variant": "return"
     }
   ],

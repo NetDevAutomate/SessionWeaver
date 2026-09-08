@@ -1,9 +1,9 @@
 # Public claims audit
 
-This audit maps each externally testable claim in `README.md` and `SKILL.md` to the maintained
-implementation, regression test, or retained evidence that makes it true. Historical PoC values
-are explicitly labelled history and are not claims about current behavior. Architecture artifacts
-are excluded from this non-diagram A5 stage.
+This audit maps each externally testable claim in `README.md`, `SKILL.md`, and the published
+Phase 2 diagrams to the maintained implementation, regression test, or retained evidence that
+makes it true. Historical PoC values are explicitly labelled history and are not claims about
+current behavior.
 
 ## Distribution, ownership, and command surface
 
@@ -70,6 +70,17 @@ are excluded from this non-diagram A5 stage.
 | Tier-1 ontology rebuild was parity preparation only and never a recall input. | Benchmark orchestration and absence of ontology imports/queries in recall. | `tests/test_bench.py`; source inspection of `src/session_weaver/bench.py` and `src/session_weaver/recall.py`. |
 | PoC 0.64/0.50 concept-only and 0.68/0.50 fusion values are history only. | `docs/RESULTS-final.md` historical PoC evidence; explicit historical labels in README/SKILL. | `tests/test_docs.py::test_public_docs_remove_superseded_behavior_claims`. |
 
+## Target-state diagram claims and provenance
+
+| Public claim | Maintained evidence | Re-runnable check |
+| --- | --- | --- |
+| Wind-down/import writes authoritative concept state transactionally to SQLite concepts + sidecar; `concept project` reads that state and emits disposable Markdown. | `src/session_weaver/concepts.py::ConceptService.winddown`, `ConceptService.import_okf`, and `ConceptService.project`; `src/session_weaver/projection.py::project_concepts`; all three `docs/architecture/phase2-*.*.json` typed specs. | `tests/test_docs.py::test_target_state_diagrams_preserve_authoritative_concept_direction`; concept and projection suites. |
+| Recall reads authorized concepts/sidecar plus canonical sessions; Tier-1 ontology derives from canonical sessions and is not a recall input. | `src/session_weaver/recall.py::recall`; architecture and data-flow typed relationships in `docs/architecture/phase2-*`. | Diagram semantic regression in `tests/test_docs.py`; recall source checks in `tests/test_recall.py`. |
+| Each current diagram source passes 9/9 showcase checks with zero errors/warnings, and each delivery receipt binds the frozen specification and generated HTML SHA-256 values. | `docs/architecture/phase2-*.validation.json` and `docs/architecture/phase2-*.delivery.json`. | Re-run Archify `validate ... --quality showcase --json` and `deliver ... --quality showcase --json`; recompute both hashes. |
+| Each visual-check receipt is bound to the delivered artifact and records containment/readability at 1440×900, 1600×1000, 1920×1080, and 2048×1320. | `docs/architecture/phase2-*.visual-check.json` plus screenshot sidecars. | Re-run Archify `visual-check`; compare receipt artifact SHA-256 to the delivery receipt. |
+| Automated delivery and browser receipts do not establish visual polish; independent perceptual review is a separate image-capable boundary. | Twelve retained light/dark endpoint screenshots and the A5 report's explicit perceptual-review record. | Inspect every retained screenshot independently; do not infer perceptual PASS from machine receipts. |
+| Superseded PoC artifacts were relocated as byte-identical R100 history with provenance hashes retained, never reused as current acceptance evidence. | `docs/architecture/poc/README.md` and the 16 tracked files under `docs/architecture/poc/`. | `git diff --summary 1bb80fda..ff3dd90e`; recompute the listed pre/post SHA-256 values. |
+
 ## Freshness, safety, and development claims
 
 | Public claim | Maintained evidence | Re-runnable check |
@@ -78,5 +89,5 @@ are excluded from this non-diagram A5 stage.
 | WAL-mode live databases use SQLite Online Backup rather than `cp` in maintained live validation. | `src/session_weaver/ontology_live.py::_create_online_backup`; benchmark/projection live harnesses. | Live safety tests in `tests/test_ontology_live.py`, `tests/test_bench_live.py`, and `tests/test_projection_live.py`. |
 | Cross-machine sync cannot promise propagated forgetting across native transcripts, peers, backups, and notes. | This is an explicit limitation, not a success claim; upstream sync only governs transferred database state. | Review upstream sync contract and retained source systems before making any stronger claim. |
 | Root and packaged skills are byte-identical. | The two tracked `SKILL.md` files. | `tests/test_skill_sync.py`. |
-| The suite contains 491 tests: 487 default-selected and 4 opt-in live. | Pytest collection at A5 implementation time. | `uv run pytest --collect-only -q --no-cov` reports `487/491 tests collected (4 deselected)`. |
+| The suite contains 493 tests: 489 default-selected and 4 opt-in live. | Pytest collection after the A5 round-1 regressions. | `uv run pytest --collect-only -q --no-cov` reports `489/493 tests collected (4 deselected)`. |
 | Package coverage floor is 90%. | `pyproject.toml:[tool.pytest.ini_options]`. | `uv run pytest -W error`. |

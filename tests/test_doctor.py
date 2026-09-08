@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import pytest
+import yaml
+from agent_session_tools.context.scope import ScopePolicy, apply_policy
 
 import session_weaver.ontology as ontology
 from session_weaver.cli import main
@@ -20,22 +22,37 @@ class ProductionStore(Protocol):
 
     conn: sqlite3.Connection
     db_path: Path
+    config_path: Path
 
 
 def _insert_concept_sentinel(store: ProductionStore) -> None:
+    _insert_scoped_concept(
+        store,
+        session_id="fixture-session-1",
+        term="Doctorrecallsentinel",
+        title="Doctorrecallsentinel memory probe",
+    )
+
+
+def _insert_scoped_concept(
+    store: ProductionStore,
+    *,
+    session_id: str,
+    term: str,
+    title: str,
+) -> str:
     quote = store.conn.execute(
-        """SELECT body FROM context_evidence
-           WHERE session_id='fixture-session-1'
-             AND body='How does fixture session 1 reach context evidence?'"""
+        "SELECT body FROM context_evidence WHERE session_id=? ORDER BY id LIMIT 1",
+        (session_id,),
     ).fetchone()[0]
     result = ConceptService(store.db_path).winddown(
-        "fixture-session-1",
+        session_id,
         {
             "concepts": [
                 {
                     "type": "Finding",
-                    "title": "Doctorrecallsentinel memory probe",
-                    "description": "Doctorrecallsentinel proves concept recall is operational.",
+                    "title": title,
+                    "description": f"{term} proves concept recall is operational.",
                     "tags": ["doctor", "positive-control"],
                     "confidence": 0.9,
                     "quotes": [{"quote": quote}],
@@ -45,6 +62,7 @@ def _insert_concept_sentinel(store: ProductionStore) -> None:
         actor="doctor-test",
     )
     assert result.writes > 0
+    return result.concept_ids[0]
 
 
 def _install_mcp_configs(home: Path) -> None:
@@ -341,6 +359,71 @@ def test_doctor_treats_mcp_registration_and_missing_grok_skill_as_report_only(
     assert "INFO  mcp kiro session-db not registered" in out
     assert "INFO  mcp codex session-db not registered" in out
     assert "INFO  grok skill absent" in out
+
+
+def test_doctor_uses_later_visible_recall_candidate_after_unauthorized_first_candidate(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _insert_doctor_sentinel(production_store.conn)
+    monkeypatch.setattr(ontology, "_utc_now", lambda: "9998-01-01T00:00:00Z")
+    rebuild_ontology(production_store.conn)
+    candidates = [
+        (
+            _insert_scoped_concept(
+                production_store,
+                session_id="fixture-session-1",
+                term="Alphahiddendoctorcontrol",
+                title="Alphahiddendoctorcontrol hidden",
+            ),
+            "fixture-session-1",
+            "alphahiddendoctorcontrol",
+        ),
+        (
+            _insert_scoped_concept(
+                production_store,
+                session_id="fixture-session-2",
+                term="Zetavisibledoctorcontrol",
+                title="Zetavisibledoctorcontrol visible",
+            ),
+            "fixture-session-2",
+            "zetavisibledoctorcontrol",
+        ),
+    ]
+    first, later = sorted(candidates, key=lambda candidate: candidate[0])
+    config = yaml.safe_load(production_store.config_path.read_text(encoding="utf-8"))
+    config["memory"]["projects"] = {
+        "hidden-project": {"scope": "personal", "roots": []},
+        "visible-project": {"scope": "work", "roots": []},
+    }
+    production_store.config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
+    apply_policy(
+        production_store.conn,
+        ScopePolicy.from_config(config),
+        actor="doctor-scope-test",
+        dry_run=False,
+    )
+    production_store.conn.executemany(
+        "INSERT INTO context_session_projects VALUES (?,?,?)",
+        (
+            (first[1], "hidden-project", "explicit"),
+            (later[1], "visible-project", "explicit"),
+        ),
+    )
+    production_store.conn.commit()
+    monkeypatch.setenv("SESSION_CONTEXT_SCOPE", "work")
+    _install_tool_stubs(tmp_path, monkeypatch)
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert f"ok    recall positive control term={later[2]} results=" in out
+    assert f"term={first[2]}" not in out
 
 
 def test_doctor_treats_inconsistent_concept_sidecar_as_fatal(

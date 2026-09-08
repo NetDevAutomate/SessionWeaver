@@ -3,7 +3,14 @@
   "ok": true,
   "command": "validate",
   "type": "architecture",
+  "input": "docs/architecture/phase2-architecture.architecture.json",
   "checksPassed": 9,
   "checkCount": 9,
-  "composition": {"profile": "showcase", "status": "pass", "errors": 0, "warnings": 0}
+  "composition": {
+    "profile": "showcase",
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "minimumLabelRouteClearancePx": 43.5
+  }
 }

@@ -6,12 +6,12 @@
   "input": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-winddown-sequence.sequence.json",
   "output": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-winddown-sequence.html",
   "specification": {
-    "sha256": "64a2e2af7be3087f85ca11721103a54027c8ae333f17e6fad3b3684eed310e45",
-    "bytes": 2908
+    "sha256": "5b57285066fe2a56081afdf130a50ae177fa2a819a6446d91cd3df0095814502",
+    "bytes": 2934
   },
   "artifact": {
-    "sha256": "f87e0e242ebb824f8cf4bc534c6a1da99e1fc59b855ec23360eacb58a509f3ed",
-    "bytes": 708115
+    "sha256": "48f72fd23af821971336bfce3d4e8d4adb88a56242bfb50722e26fe93ce3a3fe",
+    "bytes": 708188
   },
   "validation": {
     "checksPassed": 9,
