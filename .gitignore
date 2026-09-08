@@ -394,7 +394,6 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-#!! ERROR: typescript is undefined. Use list command to see defined gitignore types !!#
 
 ### VisualStudioCode ###
 .vscode/*
@@ -441,7 +440,6 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-#!! ERROR: zed is undefined. Use list command to see defined gitignore types !!#
 
 # End of https://www.toptal.com/developers/gitignore/api/python,node,rust,go,typescript,visualstudiocode,macos,linux,windows,zed
 
@@ -468,3 +466,23 @@ CLAUDE.md
 
 # Local feature worktrees
 .worktrees/
+
+# Private session data, generated knowledge and local review artifacts
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.jsonl
+*.jsonl.gz
+*.npy
+*.pem
+*.key
+.env.*
+!.env.example
+okf-store/
+clean-packets/
+.artifacts/
+.package-wheel/
+.package-sdist/

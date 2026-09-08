@@ -8,6 +8,24 @@ Session Weaver is a standalone distribution of cross-harness session capture, ev
 concept recall, wind-down writing, ontology diagnostics, and benchmark tooling. One `uv tool`
 install exposes the `session-*` tools plus the `session-weaver` CLI and agent skill.
 
+Use it to recover a decision from another agent, resume work after a break, or retain a
+source-linked explanation of what a session taught you. For example, recall why a database
+change was made, inspect the original evidence, and carry the useful context into your next
+coding session.
+
+- [OKF and reusable knowledge](docs/knowledge.md): write concepts, check their sources, and
+  generate readable Markdown.
+- [Build and inspect the ontology](docs/ontology.md): connect sessions to projects, files,
+  commands and test summaries.
+- [Architecture diagrams](docs/architecture/README.md): view the Archify diagrams directly
+  in GitHub.
+- [StudyLoop](https://www.studyloop.dev/): the related learning application; its public
+  website is maintained in [StudyLoopSite](https://github.com/NetDevAutomate/StudyLoopSite).
+
+This README tracks `main`. The latest tagged release is `v0.2.0`; the new store-age and
+hub-skill doctor probes described below are **Unreleased** and require a newer checkout or
+commit install. The existing release tag is unchanged.
+
 The maintained session-tool implementation and database schema remain owned by the
 [StudyLoop monorepo](https://github.com/NetDevAutomate/StudyLoop) package
 `packages/agent-session-tools`; this repository consumes that source at a pinned commit rather
@@ -131,11 +149,18 @@ MCP registration from `~/.claude.json`, `~/.kiro/settings/mcp.json`, and
 
 | Classification | Findings | Exit effect |
 | --- | --- | --- |
-| Fatal | missing/unreadable session store; unhealthy ontology; missing/invalid concept sidecar; inconsistent FTS digest; recall positive-control failure; missing required `session-*` executables | exit 1 |
-| Report-only | Claude/Kiro/Codex session-db MCP registration missing or unreadable; Grok skill absent; no searchable term in an otherwise empty store | no exit change |
+| Fatal | missing/unreadable session store; unhealthy ontology; missing/invalid concept sidecar; inconsistent FTS digest; recall positive-control failure or unavailability (for example an unconfigured context scope); missing required `session-*` executables | exit 1 |
+| Report-only | Claude/Kiro/Codex session-db MCP registration missing or unreadable; Grok skill absent; no searchable term in an otherwise empty store; session store stale (newest exported session older than 7 days) or freshness unknown; hub skill stale, absent, or unreadable | no exit change |
 
 MCP checks are visibility diagnostics, not proof that a remote server is running. The standalone
 installer does not register MCP servers.
+
+Doctor also runs report-only stale-context probes: it prints the newest exported session's
+timestamp and flags the store stale after 7 days (remediation: run `session-export`), and it
+compares the installed hub skill at `~/.agents/skills/session-weaver/SKILL.md` with the packaged
+copy (remediation: run `session-weaver install`). This measures recorded session age, not the
+time of the last successful export. An unavailable recall control is a classified failure;
+the remaining tool, MCP and skill checks still run.
 
 ## Ontology boundary
 
@@ -209,7 +234,7 @@ uv run ruff format --check .
 uv run pyright
 ```
 
-The current suite contains **541 tests**: 536 selected by the default non-live run and 5 opt-in
+The current suite contains **548 tests**: 543 selected by the default non-live run and 5 opt-in
 live tests. Package coverage is required to remain at least 90%. The ontology live test requires
 an explicit source and writes retained evidence only when an explicit target is supplied:
 
@@ -223,11 +248,9 @@ SESSION_WEAVER_ONTOLOGY_EVIDENCE=docs/data/ontology-tier1-baseline.json \
 Testable public claims are mapped to maintained code/tests/evidence in
 [`docs/claims-audit.md`](docs/claims-audit.md).
 
-The current target-state diagrams are [`phase2-architecture`](docs/architecture/phase2-architecture.html),
-[`phase2-dataflow`](docs/architecture/phase2-dataflow.html), and
-[`phase2-winddown-sequence`](docs/architecture/phase2-winddown-sequence.html). The original PoC
-artifacts and their unchanged provenance sidecars are retained under
-[`docs/architecture/poc/`](docs/architecture/poc/README.md) and are superseded by `phase2-*`.
+The [architecture guide](docs/architecture/README.md) embeds the existing Archify image exports
+so they render in GitHub. Source specifications, optional HTML viewers and original provenance
+receipts remain available there; they are development evidence, not additional setup steps.
 
 ## License and project files
 

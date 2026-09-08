@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -13,6 +14,7 @@ from agent_session_tools.context.scope import ScopePolicy, apply_policy
 import session_weaver.ontology as ontology
 from session_weaver.cli import main
 from session_weaver.concepts import ConceptService
+from session_weaver.installer import packaged_skill_dir
 from session_weaver.ontology import EXTRACTION_VERSION, rebuild_ontology
 from session_weaver.recall import RecallReport, plan
 
@@ -339,6 +341,189 @@ def test_doctor_contains_unexpected_ontology_failure_and_continues_checks(
     assert "ok    session-export ->" in out
     assert "ok    session-query ->" in out
     assert "ok    session-sync ->" in out
+    assert "ok    session-repair ->" in out
+
+
+def test_doctor_reports_unconfigured_scope_and_continues_checks(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    config = yaml.safe_load(production_store.config_path.read_text(encoding="utf-8"))
+    del config["memory"]["default_scope"]
+    production_store.config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "FAIL  recall positive control unavailable: " in out
+    assert "No context scope configured" in out
+    assert "ok    session-export ->" in out
+    assert "ok    session-query ->" in out
+    assert "ok    session-sync ->" in out
+    assert "ok    session-repair ->" in out
+
+
+def test_doctor_reports_stale_store_and_stale_hub_skill_as_report_only(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    _install_mcp_configs(Path.home())
+    _install_grok_skill(Path.home())
+    # Newest fixture session is 2026-09-07T12:1x:00+00:00; a clock 9 days later is stale.
+    monkeypatch.setattr(
+        "session_weaver.cli._doctor_utc_now",
+        lambda: datetime(2026, 9, 16, 13, 0, tzinfo=UTC),
+    )
+    hub_skill = Path.home() / ".agents" / "skills" / "session-weaver"
+    hub_skill.mkdir(parents=True)
+    (hub_skill / "SKILL.md").write_text("an out-of-date installed copy\n", encoding="utf-8")
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "INFO  session store stale: newest session 2026-09-07T12:1" in out
+    assert "days old" in out
+    assert "(run session-export)" in out
+    assert "INFO  hub skill stale:" in out
+    assert "(run session-weaver install)" in out
+
+
+def test_doctor_reports_fresh_store_and_current_hub_skill(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    _install_mcp_configs(Path.home())
+    _install_grok_skill(Path.home())
+    monkeypatch.setattr(
+        "session_weaver.cli._doctor_utc_now",
+        lambda: datetime(2026, 9, 8, 10, 0, tzinfo=UTC),
+    )
+    hub_skill = Path.home() / ".agents" / "skills" / "session-weaver"
+    hub_skill.mkdir(parents=True)
+    (hub_skill / "SKILL.md").write_bytes((packaged_skill_dir() / "SKILL.md").read_bytes())
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "ok    session store fresh: newest session 2026-09-07T12:1" in out
+    assert "ok    hub skill current:" in out
+
+
+def test_doctor_freshness_uses_chronological_not_lexicographic_newest(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    # Lexicographically larger than every fixture timestamp, chronologically EARLIER
+    # (09:00Z): a text-level SQL MAX would wrongly report this row as newest.
+    production_store.conn.execute(
+        """
+        INSERT INTO sessions(
+            id, source, project_path, git_branch, created_at, updated_at, metadata
+        ) VALUES (
+            'offset-decoy', 'codex', NULL, NULL,
+            '2026-09-07T08:00:00+11:00', '2026-09-07T20:00:00+11:00', '{}'
+        )
+        """
+    )
+    production_store.conn.commit()
+    monkeypatch.setattr(
+        "session_weaver.cli._doctor_utc_now",
+        lambda: datetime(2026, 9, 8, 10, 0, tzinfo=UTC),
+    )
+
+    main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert "ok    session store fresh: newest session 2026-09-07T12:1" in out
+    assert "20:00:00+11:00" not in out
+
+
+def test_doctor_freshness_boundary_is_strictly_older_than_seven_days(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    # Newest fixture session is 2026-09-07T12:12:00+00:00; 7 days and one minute later
+    # must classify as stale even though timedelta.days still floors to 7.
+    monkeypatch.setattr(
+        "session_weaver.cli._doctor_utc_now",
+        lambda: datetime(2026, 9, 14, 12, 13, tzinfo=UTC),
+    )
+
+    main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert "INFO  session store stale: newest session 2026-09-07T12:1" in out
+    assert "is 7 days old (run session-export)" in out
+
+
+def test_doctor_reports_future_newest_session_as_freshness_unknown(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    # A clock before the newest fixture session simulates skew; a negative age
+    # must not be reported as a fresh store.
+    monkeypatch.setattr(
+        "session_weaver.cli._doctor_utc_now",
+        lambda: datetime(2026, 9, 1, 0, 0, tzinfo=UTC),
+    )
+
+    main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert "INFO  session store freshness unknown: newest session 2026-09-07T12:1" in out
+    assert "is in the future (check the system clock)" in out
+    assert "ok    session store fresh" not in out
+
+
+def test_doctor_reports_unexpected_recall_term_failure_and_continues_checks(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+
+    def broken_context(_db: Path) -> None:
+        raise RuntimeError("unexpected context failure")
+
+    monkeypatch.setattr("session_weaver.cli.open_context", broken_context)
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "FAIL  recall positive control unavailable: term selection failed" in out
+    assert "ok    session-export ->" in out
     assert "ok    session-repair ->" in out
 
 

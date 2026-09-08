@@ -44,6 +44,9 @@ current behavior.
 | Doctor recalls a term read from indexed content and requires at least one real result. | Fatal when a known-term call fails or returns zero; report-only when no searchable term exists. | `src/session_weaver/cli.py::_doctor_recall`; `src/session_weaver/recall.py::recall`. | Positive and empty-result controls in `tests/test_doctor.py`. |
 | Doctor reads Claude, Kiro, and Codex MCP registration from the three documented HOME-relative files. | Report-only. | `src/session_weaver/cli.py::_doctor_mcp_registration`. | Registered and absent temp-HOME controls in `tests/test_doctor.py`. |
 | Missing Grok skill is visible but nonfatal. | Report-only. | `src/session_weaver/cli.py::_doctor_grok_skill`. | `tests/test_doctor.py::test_doctor_treats_mcp_registration_and_missing_grok_skill_as_report_only`. |
+| An unavailable recall positive control (for example an unconfigured context scope) is a classified fatal failure, and doctor still completes every remaining check. | Fatal. | `src/session_weaver/cli.py::_doctor`. | `tests/test_doctor.py::test_doctor_reports_unconfigured_scope_and_continues_checks`. |
+| Session-store staleness (newest exported session older than 7 days) is visible but nonfatal. | Report-only. | `src/session_weaver/cli.py::_doctor_store_freshness`. | `tests/test_doctor.py::test_doctor_reports_stale_store_and_stale_hub_skill_as_report_only`; fresh control in `tests/test_doctor.py::test_doctor_reports_fresh_store_and_current_hub_skill`. |
+| A hub skill copy that drifts from the packaged skill is visible but nonfatal. | Report-only. | `src/session_weaver/cli.py::_doctor_hub_skill`. | `tests/test_doctor.py::test_doctor_reports_stale_store_and_stale_hub_skill_as_report_only`; current control in `tests/test_doctor.py::test_doctor_reports_fresh_store_and_current_hub_skill`. |
 | Missing required `session-*` executables remain fatal. | Fatal. | `src/session_weaver/cli.py::_doctor`. | `tests/test_doctor.py::test_doctor_reports_missing_tools_without_hiding_healthy_ontology`. |
 
 ## Ontology and sync boundary
@@ -89,11 +92,17 @@ current behavior.
 | WAL-mode live databases use SQLite Online Backup rather than `cp` in maintained live validation. | `src/session_weaver/ontology_live.py::_create_online_backup`; benchmark/projection live harnesses. | Live safety tests in `tests/test_ontology_live.py`, `tests/test_bench_live.py`, and `tests/test_projection_live.py`. |
 | Cross-machine sync cannot promise propagated forgetting across native transcripts, peers, backups, and notes. | This is an explicit limitation, not a success claim; upstream sync only governs transferred database state. | Review upstream sync contract and retained source systems before making any stronger claim. |
 | Root and packaged skills are byte-identical. | The two tracked `SKILL.md` files. | `tests/test_skill_sync.py`. |
-| The suite contains 541 tests: 536 default-selected and 5 opt-in live. | Pytest collection after the merge-author policy fix. | `uv run pytest --collect-only -q --no-cov` reports `536/541 tests collected (5 deselected)`; `tests/test_docs.py::test_public_test_inventory_matches_actual_pytest_collection` derives and compares both public claims to collection output. |
+| The suite contains 548 tests: 543 default-selected and 5 opt-in live. | Pytest collection after the doctor stale-context additions and council-review hardening. | `uv run pytest --collect-only -q --no-cov` reports `543/548 tests collected (5 deselected)`; `tests/test_docs.py::test_public_test_inventory_matches_actual_pytest_collection` derives and compares both public claims to collection output. |
 | Package coverage floor is 90%. | `pyproject.toml:[tool.pytest.ini_options]`. | `uv run pytest -W error`. |
 
 
 ## A7 packaging and release boundaries
+
+The store-age and hub-skill probes above are Unreleased additions after `v0.2.0`.
+Their timestamp comparison measures recorded session age, not export-run liveness. Current
+[knowledge](knowledge.md), [ontology](ontology.md), [security](../SECURITY.md) and
+[contributor](../CONTRIBUTING.md) guidance describes maintained behaviour; the
+[diagram guide](architecture/README.md) embeds the retained images for GitHub rendering.
 
 | Public claim | Maintained evidence | Re-runnable check |
 | --- | --- | --- |

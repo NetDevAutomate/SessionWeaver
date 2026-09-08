@@ -260,7 +260,18 @@ def test_target_state_diagrams_preserve_authoritative_concept_direction() -> Non
 
 
 def test_public_markdown_local_links_resolve() -> None:
-    for document in (README, SKILL, CLAIMS_AUDIT):
+    documents = (
+        README,
+        SKILL,
+        CLAIMS_AUDIT,
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "SECURITY.md",
+        ROOT / "THIRD-PARTY-NOTICES.md",
+        ROOT / "docs/knowledge.md",
+        ROOT / "docs/ontology.md",
+        ROOT / "docs/architecture/README.md",
+    )
+    for document in documents:
         text = document.read_text(encoding="utf-8")
         for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", text):
             if "://" in target or target.startswith("#"):

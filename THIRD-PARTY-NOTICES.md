@@ -19,10 +19,19 @@ their own licences, resolved from PyPI at install time.
 
 **Source:** Google's Open Knowledge Format, v0.2 (June 2026)
 
-The tier-2 wind-down store authors knowledge concepts as OKF Markdown files
-(frontmatter schema: type/title/description/tags/sources/verified/confidence/
-actor). Session Weaver uses the format as a specification; no OKF code is
-included.
+The frozen PoC used Markdown with OKF-inspired metadata. The maintained importer accepts
+that specific legacy writer shape, not arbitrary OKF documents. Current wind-down writes
+authoritative SQLite concepts and `concept project` emits a SessionWeaver-specific Markdown
+projection. See [the OKF guide](docs/knowledge.md) for compatibility and trust boundaries.
+No OKF implementation code is included.
+
+## Archify
+
+**Source:** <https://github.com/tt-a1i/archify>
+**Licence:** MIT
+
+The architecture directory retains Archify specifications, rendered diagrams and validation
+receipts. The documentation embeds its static image exports for GitHub readers.
 
 ## Contributor Covenant
 

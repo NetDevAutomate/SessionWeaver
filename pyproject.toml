@@ -26,7 +26,7 @@ Repository = "https://github.com/NetDevAutomate/SessionWeaver"
 Source = "https://github.com/NetDevAutomate/StudyLoop"
 
 [project.scripts]
-# Session Weaver's own CLI: skill installation + environment doctor.
+# Session Weaver's CLI: skills, doctor, concepts, recall, ontology and benchmarks.
 session-weaver = "session_weaver.cli:main"
 # Re-exported session tools so ONE `uv tool install` provides the full
 # standalone toolchain. The implementations come from agent-session-tools

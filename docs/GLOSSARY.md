@@ -3,6 +3,10 @@
 Plain-English definitions for every acronym and term of art used in this
 directory's documents (RESULTS-*.md, finding-*.md, plans, diagrams).
 
+Historical experiment terms below do not imply installed features or automation. For current
+behaviour, start with [OKF knowledge](knowledge.md), [ontology](ontology.md) and the
+[README](../README.md). Current recall is keyword-based; embeddings/fusion remain historical.
+
 ## Scoring & retrieval
 
 | Term | Meaning |
@@ -30,10 +34,10 @@ directory's documents (RESULTS-*.md, finding-*.md, plans, diagrams).
 | **Domain / range** | A property's typing rule: which class the subject (domain) and object (range) must belong to. "0 violations" = every triple obeys its property's typing. |
 | **Individual** | One concrete instance of a class (a specific session, file, command). |
 | **Entity resolution** | Recognising that mentions in different sessions refer to the same individual — how unrelated conversations become a connected graph. |
-| **Tier-1** | Deterministic ontology population at ingest: parsed from data by code, no LLM, $0 (projects, artifacts, commands, test runs). |
-| **Tier-2** | Semantic ontology population by the session's own agent at wind-down (Decisions, Findings) — judgment-requiring entities. |
+| **Tier-1** | Deterministic structural extraction (projects, artifacts, commands, test summaries). Current builds run through explicit `ontology rebuild`, not an installed ingest hook. |
+| **Tier-2** | Model-assisted interpretation into concepts such as Decisions and Findings. Current wind-down persists concepts separately from the structural ontology. |
 | **Wind-down** | The end-of-session step where the agent records what was learned/decided while it still has full context. |
-| **OKF** | Open Knowledge Format (Google Cloud, 2026): knowledge as plain Markdown files with YAML frontmatter (type, title, sources, verified…), cross-links forming a graph. Our tier-2 authoring/projection format. |
+| **OKF** | Open Knowledge Format: readable knowledge files with YAML metadata. The maintained legacy importer accepts the frozen writer shape; current concept Markdown is a disposable SessionWeaver projection. See [the knowledge guide](knowledge.md). |
 | **Frontmatter** | The YAML metadata block between `---` markers at the top of a Markdown file. |
 | **Provenance** | The trail from a derived fact back to its sources (which session/messages it came from, extracted by what, when). |
 
@@ -65,4 +69,4 @@ directory's documents (RESULTS-*.md, finding-*.md, plans, diagrams).
 | **Anti-resurrection filter** | sync.py:586-590 — merge SQL refuses to re-insert empty-content rows absent at the destination. |
 | **Idempotent** | Running the operation again changes nothing (second apply/sync = no-op). Key safety property we test for. |
 | **SAST** | Static Application Security Testing (bandit) — scans source for security bugs without running it. |
-| **launchd sweep** | The macOS scheduled job running session-export every 4 h so history is captured even when hooks miss. |
+| **launchd sweep** | A user-managed macOS schedule for session export. The historical setup used four hours; SessionWeaver installs no sweep or fixed interval. |

@@ -50,7 +50,11 @@ def test_release_metadata_uses_exact_post_fix_pin_and_020() -> None:
     assert f"@{PIN}#subdirectory=packages/agent-session-tools" in dependency
     assert PIN in lock
     assert "c8315ccb74a7255446396fe616dddd684e1b0d14" not in lock
-    assert "## [Unreleased]\n\n## [0.2.0] - 2026-09-08" in changelog
+    unreleased_index = changelog.find("## [Unreleased]")
+    released_index = changelog.find("## [0.2.0] - 2026-09-08")
+    assert unreleased_index != -1
+    assert released_index != -1
+    assert unreleased_index < released_index
     assert (
         "[Unreleased]: https://github.com/NetDevAutomate/SessionWeaver/compare/v0.2.0...HEAD"
         in changelog

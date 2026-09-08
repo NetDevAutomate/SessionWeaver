@@ -137,6 +137,30 @@ Historical context only: the earlier PoC reported concept-only 0.64/0.50 and uns
 0.68/0.50. Those values are not the current measured gate and do not describe shipped fusion or
 embedding behavior.
 
+## Stale-context checks and remediations
+
+Stale context produces confident answers from an out-of-date world. Run these checks before
+trusting recall for time-sensitive questions, and whenever results look older than expected:
+
+1. **Store freshness.** `session-weaver doctor` prints the newest exported session's timestamp
+   as `ok    session store fresh` or, once it is older than 7 days, `INFO  session store stale`.
+   Remediation: run `session-export`. A capture gap means missing history; it does not prove
+   nothing happened.
+2. **Ontology staleness.** `session-weaver ontology status` reports freshness and
+   extraction-version drift. Remediation: `session-weaver ontology rebuild`. Ontology rows are
+   diagnostics, never recall evidence.
+3. **Skill staleness.** Doctor compares `~/.agents/skills/session-weaver/SKILL.md` with the
+   installed package's copy and prints `ok    hub skill current` or `INFO  hub skill stale`.
+   Remediation: `session-weaver install`.
+4. **Recalled-claim currency.** Before acting on a recalled concept or session, check its source
+   date and whether the claim still applies to the present project and version; prefer the
+   newest evidence when concepts disagree.
+
+The store-age and hub-skill probes are report-only diagnostics and do not change the exit
+code. Ontology health failures remain fatal in doctor. Store age measures session timestamps,
+not the time of the last successful export. These two probes are newer than the `v0.2.0` tag;
+use a checkout or commit containing the Unreleased changes.
+
 ## Freshness and safety rails
 
 - `session-export` is run by the user's own hooks or sweep configuration. This installer does not
