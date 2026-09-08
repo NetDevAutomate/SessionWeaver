@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-architecture.architecture.json",
+  "output": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-architecture.html",
+  "specification": {
+    "sha256": "f9d35c08ac93b669a7784cb6d497a937403d629161df09c67b8b63ea08f2849c",
+    "bytes": 3918
+  },
+  "artifact": {
+    "sha256": "640166da9163fa05535070a18bbf16038dcc61a75b149b683c8daca70596f7b6",
+    "bytes": 716656
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

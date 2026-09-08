@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "validate",
+  "type": "dataflow",
+  "input": "docs/architecture/phase2-dataflow.dataflow.json",
+  "checksPassed": 9,
+  "checkCount": 9,
+  "composition": {
+    "profile": "showcase",
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "minimumLabelRouteClearancePx": 6.8
+  }
+}

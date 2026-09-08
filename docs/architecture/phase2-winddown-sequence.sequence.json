@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "SessionWeaver Wind-down Write Path",
+    "locale": "en",
+    "output": "docs/architecture/phase2-winddown-sequence.html",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1080, 540]
+  },
+  "participants": [
+    {
+      "id": "p2s_agent_author",
+      "type": "external",
+      "label": "Agent",
+      "sublabel": "proposes concepts"
+    },
+    {
+      "id": "p2s_sessionweaver_cli",
+      "type": "backend",
+      "label": "SessionWeaver CLI",
+      "sublabel": "winddown"
+    },
+    {
+      "id": "p2s_session_store",
+      "type": "database",
+      "label": "Session Store",
+      "sublabel": "canonical messages"
+    },
+    {
+      "id": "p2s_citation_binder",
+      "type": "security",
+      "label": "Citation Binder",
+      "sublabel": "citation_binding: machine-confirmed"
+    },
+    {
+      "id": "p2s_concept_store",
+      "type": "database",
+      "label": "Concepts + Sidecar",
+      "sublabel": "transactional SQLite authority"
+    }
+  ],
+  "messages": [
+    {
+      "id": "p2s_submit_winddown",
+      "from": "p2s_agent_author",
+      "to": "p2s_sessionweaver_cli",
+      "y": 170,
+      "label": "submit JSON + verbatim quote",
+      "variant": "emphasis"
+    },
+    {
+      "id": "p2s_load_session",
+      "from": "p2s_sessionweaver_cli",
+      "to": "p2s_session_store",
+      "y": 210,
+      "label": "load cited session",
+      "variant": "default"
+    },
+    {
+      "id": "p2s_return_messages",
+      "from": "p2s_session_store",
+      "to": "p2s_sessionweaver_cli",
+      "y": 250,
+      "label": "canonical messages",
+      "variant": "return"
+    },
+    {
+      "id": "p2s_bind_quotes",
+      "from": "p2s_sessionweaver_cli",
+      "to": "p2s_citation_binder",
+      "y": 290,
+      "label": "bind exact quotes",
+      "variant": "security"
+    },
+    {
+      "id": "p2s_verify_offsets",
+      "from": "p2s_citation_binder",
+      "to": "p2s_session_store",
+      "y": 330,
+      "label": "verify quote offsets",
+      "variant": "security"
+    },
+    {
+      "id": "p2s_confirm_binding",
+      "from": "p2s_session_store",
+      "to": "p2s_citation_binder",
+      "y": 370,
+      "label": "exact match",
+      "variant": "return"
+    },
+    {
+      "id": "p2s_store_proposal",
+      "from": "p2s_citation_binder",
+      "to": "p2s_concept_store",
+      "y": 410,
+      "label": "commit bound proposal",
+      "variant": "emphasis"
+    },
+    {
+      "id": "p2s_return_summary",
+      "from": "p2s_concept_store",
+      "to": "p2s_agent_author",
+      "y": 450,
+      "label": "transaction committed",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p2s_sessionweaver_cli",
+      "from": 165,
+      "to": 460,
+      "type": "backend"
+    },
+    {
+      "participant": "p2s_citation_binder",
+      "from": 285,
+      "to": 420,
+      "type": "security"
+    }
+  ]
+}

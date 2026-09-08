@@ -1,0 +1,51 @@
+# Local CI mirror for SessionWeaver's six-job A7 workflow:
+# `quality` (2 OS x 2 Python) -> `gates`, plus independent `package`,
+# `pre-commit`, `fixture-e2e`, and tag-only `release-guard` jobs.
+#
+# `ci-standards check --target .` runs only the host-side quality commands
+# configured below: Ruff format, Ruff lint, Pyright, and the full non-live pytest
+# suite with warnings-as-errors and the coverage gate. It does not execute the
+# workflow graph, matrix, frozen-sync setup, package provenance, hooks, fixture
+# workflow, or release guard.
+#
+# `ci-standards run-job` is required for workflow-job execution: use
+# `ci-standards run-job quality` for a chosen Linux/Python matrix cell and
+# `run-job package`, `run-job pre-commit`, or `run-job fixture-e2e` for those
+# independent jobs. Use `run-job release-guard` only with a tag event, exact
+# GitHub run metadata, and jobs receipt. `gates` is only the aggregate of
+# completed quality cells, so a host check cannot establish either one.
+#
+# The local act runner also has fidelity limits: PR-head checkout needs a real
+# pull-request event payload to select `github.event.pull_request.head.sha`, and
+# `actions/upload-artifact` cannot provide GitHub-retained package artifacts in
+# a local act run. Treat those paths as local diagnostics; exact GitHub Actions
+# evidence remains mandatory.
+#
+# Every check overrides the profile default with this repo's own quality command,
+# matching .github/workflows/ci.yml.
+
+profile: python-uv
+
+checks:
+  lint-format:
+    command: uv run ruff format --check .
+  lint:
+    command: uv run ruff check .
+
+  # ci.yml `Typecheck` step. pyright is a declared dev dependency (Stage 0.4).
+  typecheck:
+    command: uv run pyright
+
+  # ci.yml `Test` step: warnings are errors, the `live` marker is deselected by
+  # pyproject addopts, and the >=90% coverage gate is part of the same command.
+  test:
+    command: uv run pytest -W error
+    requires_path: pyproject.toml
+
+  # The profile's uvx-pinned bandit is warn-only there; this repo has no bandit
+  # gate in ci.yml, so keep the profile default rather than pretending CI runs it.
+
+disable:
+  # No mkdocs site and no JavaScript in this repository.
+  - mkdocs-strict
+  - js-tests

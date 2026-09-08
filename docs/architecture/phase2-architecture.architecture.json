@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SessionWeaver Phase 2 Architecture",
+    "locale": "en",
+    "output": "docs/architecture/phase2-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1300, 720]
+  },
+  "components": [
+    {"id": "p2a_studyloop_source", "type": "external", "label": "StudyLoop", "sublabel": "upstream session exporter", "pos": [30, 300], "size": [140, 64]},
+    {"id": "p2a_session_store", "type": "database", "label": "Session Store", "sublabel": "canonical messages", "pos": [210, 300], "size": [150, 64]},
+    {"id": "p2a_concept_writer", "type": "backend", "label": "Wind-down / Import", "sublabel": "code-enforced binding", "pos": [410, 300], "size": [160, 64]},
+    {"id": "p2a_concept_store", "type": "database", "label": "Concepts + Sidecar", "sublabel": "authoritative SQLite + FTS", "pos": [620, 300], "size": [160, 64]},
+    {"id": "p2a_recall_service", "type": "backend", "label": "SessionWeaver Recall", "sublabel": "concept-first retrieval", "pos": [830, 300], "size": [155, 64]},
+    {"id": "p2a_benchmark_gate", "type": "security", "label": "Benchmark Gate", "sublabel": "INVESTIGATE", "tag": "recall@5 0.60 < 0.64", "pos": [1050, 300], "size": [160, 64]},
+    {"id": "p2a_installer", "type": "cloud", "label": "SessionWeaver Installer", "sublabel": "skills + harness config", "pos": [410, 90], "size": [160, 64]},
+    {"id": "p2a_ontology_diagnostics", "type": "database", "label": "Tier-1 Ontology", "sublabel": "derived session diagnostics", "tag": "never a recall input", "pos": [210, 510], "size": [150, 64]},
+    {"id": "p2a_concept_project", "type": "backend", "label": "Concept Project", "sublabel": "scope-authorized read", "pos": [620, 90], "size": [160, 64]},
+    {"id": "p2a_markdown_projection", "type": "external", "label": "Disposable Markdown", "sublabel": "regenerable projection", "pos": [830, 90], "size": [155, 64]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "StudyLoop upstream", "wraps": ["p2a_studyloop_source", "p2a_session_store"], "pad": 22},
+    {
+      "kind": "region",
+      "label": "SessionWeaver standalone distribution",
+      "wraps": ["p2a_concept_writer", "p2a_concept_store", "p2a_recall_service", "p2a_benchmark_gate", "p2a_installer", "p2a_ontology_diagnostics", "p2a_concept_project", "p2a_markdown_projection"],
+      "pad": 26
+    }
+  ],
+  "connections": [
+    {"id": "p2a_export_sessions", "from": "p2a_studyloop_source", "to": "p2a_session_store", "label": "session-export", "variant": "emphasis", "labelAt": [190, 378]},
+    {"id": "p2a_load_evidence", "from": "p2a_session_store", "to": "p2a_concept_writer", "label": "cited session evidence", "variant": "emphasis", "labelAt": [385, 296]},
+    {"id": "p2a_commit_concepts", "from": "p2a_concept_writer", "to": "p2a_concept_store", "label": "transactional writes", "variant": "emphasis", "labelAt": [595, 378]},
+    {"id": "p2a_retrieve_concepts", "from": "p2a_concept_store", "to": "p2a_recall_service", "label": "authorized retrieval", "variant": "emphasis", "labelAt": [805, 296]},
+    {"id": "p2a_score_recall", "from": "p2a_recall_service", "to": "p2a_benchmark_gate", "label": "scores k=5", "variant": "security"},
+    {"id": "p2a_project_read", "from": "p2a_concept_store", "to": "p2a_concept_project", "label": "reads authoritative state", "variant": "dashed", "labelAt": [700, 230]},
+    {"id": "p2a_emit_markdown", "from": "p2a_concept_project", "to": "p2a_markdown_projection", "label": "emits disposable files", "variant": "dashed", "labelAt": [805, 168]},
+    {"id": "p2a_derive_ontology", "from": "p2a_session_store", "to": "p2a_ontology_diagnostics", "label": "derives diagnostics", "variant": "dashed", "labelAt": [285, 378]},
+    {"id": "p2a_install_workflow", "from": "p2a_installer", "to": "p2a_concept_writer", "label": "installs skill", "variant": "dashed", "labelAt": [490, 168]}
+  ]
+}

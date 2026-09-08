@@ -1,0 +1,135 @@
+{
+  "backup": {
+    "post_import_sha256": "b71e641d53c8ceb196b7dacd1af3c246277ecc60077b196844042481d43ab05f"
+  },
+  "captured_at_utc": "2026-09-07T17:38:41Z",
+  "dry_run": {
+    "already_present": 0,
+    "ambiguous_match": 0,
+    "body_description_mismatch": 762,
+    "bound": 0,
+    "duplicate_content": 0,
+    "imported": 0,
+    "invalid_schema": 0,
+    "invalid_yaml": 0,
+    "legacy_unbound": 2033,
+    "missing_session": 0,
+    "no_exact_match": 1198,
+    "no_visible_evidence": 835,
+    "oversized_evidence": 0,
+    "parsed": 2033,
+    "scanned": 2033,
+    "unsafe_path": 0,
+    "write_failures": 0,
+    "writes": 0
+  },
+  "evidence_schema": "session-weaver.legacy-okf-import-baseline",
+  "evidence_version": 3,
+  "idempotent_reimport": {
+    "already_present": 2033,
+    "ambiguous_match": 0,
+    "body_description_mismatch": 762,
+    "bound": 0,
+    "duplicate_content": 0,
+    "imported": 0,
+    "invalid_schema": 0,
+    "invalid_yaml": 0,
+    "legacy_unbound": 0,
+    "missing_session": 0,
+    "no_exact_match": 0,
+    "no_visible_evidence": 0,
+    "oversized_evidence": 0,
+    "parsed": 2033,
+    "scanned": 2033,
+    "unsafe_path": 0,
+    "write_failures": 0,
+    "writes": 0
+  },
+  "integrity": {
+    "accepted_events": 0,
+    "bound_assertions": 0,
+    "bound_citations": 0,
+    "bound_successors": 0,
+    "concept_roots": 2033,
+    "exact_citation_failures": 0,
+    "foreign_key_violations": 0,
+    "fts_consistent": true,
+    "fts_rows": 2033,
+    "fts_sha256": "0c036eaeff2bd8d72f1cb142fa573d5481ec900592ca22c4f75e0b2ad999a558",
+    "legacy_roots": 2033,
+    "lifecycle_events": 2033,
+    "null_session_legacy_roots": 0,
+    "schema_fingerprint": "af95685e6e39e166148006519862bee3be1a15219d76772236a82890fe11011d",
+    "schema_version": 2,
+    "state_sha256": "027d71244591a7026bf0617494fa56f6d97e6303ff5ae10303b67a947ca47174"
+  },
+  "normalization": {
+    "normalized_files": 10,
+    "normalized_tag_fields": 11,
+    "original_byte_identity_preserved": true
+  },
+  "okf_source_sentinel_unchanged": true,
+  "schema_note": "evidence_version 3 adds oversized_evidence (task A3c: a claimed session's evidence body over the bounded reader's MAX_BODY_CHARS limit is excluded from exact-match search and classified legacy_unbound/oversized_evidence per record, instead of aborting the whole import transaction). This capture predates that field; 0 is filled in for dry_run/write/idempotent_reimport because every record here completed classification with zero write_failures, which is only possible if no record's claimed session ever reached an oversized-body exclusion. No new proof run was captured for this note; A6 regenerates this baseline on the full corpus under the current ImportReport shape.",
+  "source": {
+    "evidence_count": 40829,
+    "message_count": 133560,
+    "okf_markdown_files": 2033,
+    "okf_tree_sha256": "b478c1530da7bb49515fd97fcadb3268b9338fc0dd6430c15cf9529ebf557765",
+    "online_backup_sha256": "c80b51084212f9b7ed194ce94c9011338bbced52a0a00465dc857d99d2932479",
+    "schema_sha256": "1e9de63b9d92efc0051393e92eb8afde6dddce14e361e606e1c5d7bf30a9b65f",
+    "scope_policy_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "session_count": 5678,
+    "user_version": 47,
+    "visible_okf_session_counts": {
+      "personal": 0,
+      "unclassified": 341,
+      "work": 0
+    }
+  },
+  "source_sentinels_unchanged": true,
+  "status": {
+    "all_parseable_records_survived": true,
+    "dry_run_write_classification_matches": true,
+    "idempotent_reimport": true,
+    "integrity_reconciled": true,
+    "structural_reference_matches": false
+  },
+  "structural_observed": {
+    "body_description_mismatch": 762,
+    "invalid_schema": 0,
+    "invalid_yaml": 0,
+    "parsed": 2033,
+    "scanned": 2033
+  },
+  "structural_reference": {
+    "body_description_mismatch": 763,
+    "invalid_yaml": 1,
+    "safe_yaml_parsed": 2032,
+    "scanned": 2033
+  },
+  "timings_seconds": {
+    "dry_run": 23.966312,
+    "idempotent_reimport": 1.574084,
+    "write": 23.920831
+  },
+  "write": {
+    "already_present": 0,
+    "ambiguous_match": 0,
+    "body_description_mismatch": 762,
+    "bound": 0,
+    "duplicate_content": 0,
+    "imported": 2033,
+    "invalid_schema": 0,
+    "invalid_yaml": 0,
+    "legacy_unbound": 2033,
+    "missing_session": 0,
+    "no_exact_match": 1198,
+    "no_visible_evidence": 835,
+    "oversized_evidence": 0,
+    "parsed": 2033,
+    "scanned": 2033,
+    "unsafe_path": 0,
+    "write_failures": 0,
+    "writes": 2033
+  }
+}

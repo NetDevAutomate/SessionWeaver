@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "dataflow",
+  "input": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-dataflow.dataflow.json",
+  "output": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-dataflow.html",
+  "specification": {
+    "sha256": "862abeac5fb4a7e2df094276bf2ef7d63cc10a8af6972010f59a0ccd4a5209c9",
+    "bytes": 3186
+  },
+  "artifact": {
+    "sha256": "29c68cf9df06ef87fa0b9ad31922ca9c214d268d4c8430608cfeb7152714e9d5",
+    "bytes": 712422
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

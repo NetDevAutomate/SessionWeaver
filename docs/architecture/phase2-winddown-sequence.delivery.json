@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "sequence",
+  "input": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-winddown-sequence.sequence.json",
+  "output": "/Users/ataylor/code/personal/tools/session_weaver/.worktrees/sessionweaver-phase2/docs/architecture/phase2-winddown-sequence.html",
+  "specification": {
+    "sha256": "5b57285066fe2a56081afdf130a50ae177fa2a819a6446d91cd3df0095814502",
+    "bytes": 2934
+  },
+  "artifact": {
+    "sha256": "48f72fd23af821971336bfce3d4e8d4adb88a56242bfb50722e26fe93ce3a3fe",
+    "bytes": 708188
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

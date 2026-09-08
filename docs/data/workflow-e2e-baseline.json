@@ -1,0 +1,22 @@
+{
+  "aggregates": {
+    "context_concepts": 1,
+    "context_evidence": 101248,
+    "exported": 1,
+    "messages": 139635,
+    "ontology_individual": 13530,
+    "sessions": 5814
+  },
+  "schema": "sessionweaver-workflow-e2e-v1",
+  "source_sentinels_unchanged": true,
+  "tested_session_weaver_sha": "7366a238310fa6bb413c6f9b298bd3543ffd5fe2+dirty-a7",
+  "workflow": [
+    "install",
+    "export",
+    "ontology_rebuild",
+    "winddown",
+    "recall",
+    "concept_project",
+    "doctor"
+  ]
+}
