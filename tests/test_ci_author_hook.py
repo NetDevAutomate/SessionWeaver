@@ -25,20 +25,28 @@ IDENTITY_ENV_KEYS = (
     "GIT_COMMITTER_EMAIL",
 )
 CONFIG_ENV_KEYS = (
+    "GIT_CONFIG",
     "GIT_CONFIG_COUNT",
-    "GIT_CONFIG_KEY_0",
-    "GIT_CONFIG_VALUE_0",
-    "GIT_CONFIG_KEY_1",
-    "GIT_CONFIG_VALUE_1",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_NOSYSTEM",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_SYSTEM",
+)
+CONFIG_ENV_PREFIXES = (
+    "GIT_CONFIG_KEY_",
+    "GIT_CONFIG_VALUE_",
 )
 OPERATION_ENV_KEYS = (
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
     "GIT_COMMON_DIR",
     "GIT_DIR",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
     "GIT_GRAFT_FILE",
     "GIT_IMPLICIT_WORK_TREE",
     "GIT_INDEX_FILE",
     "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_NAMESPACE",
     "GIT_NO_REPLACE_OBJECTS",
     "GIT_OBJECT_DIRECTORY",
     "GIT_PREFIX",
@@ -63,13 +71,14 @@ def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
 
 def _base_env(repo: Path) -> dict[str, str]:
     env = os.environ.copy()
-    for key in (
-        *IDENTITY_ENV_KEYS,
-        *CONFIG_ENV_KEYS,
-        *OPERATION_ENV_KEYS,
-        "CHECK_COMMIT_SHA",
-    ):
-        env.pop(key, None)
+    for key in tuple(env):
+        if key in (
+            *IDENTITY_ENV_KEYS,
+            *CONFIG_ENV_KEYS,
+            *OPERATION_ENV_KEYS,
+            "CHECK_COMMIT_SHA",
+        ) or key.startswith(CONFIG_ENV_PREFIXES):
+            env.pop(key)
     env.update(
         {
             "HOME": str(repo.parent / "configless-home"),
@@ -233,6 +242,44 @@ def test_local_mode_preserves_prospective_git_environment_and_config_enforcement
     assert config_result.returncode == 0, config_result.stdout + config_result.stderr
     assert override_result.returncode == 1
     assert "Wrong Author" in override_result.stdout
+
+
+def test_fixture_env_scrubs_ambient_git_config_injection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    ambient_config = tmp_path / "ambient.gitconfig"
+    ambient_config.write_text(
+        "[user]\n\tname = Wrong Config File\n\temail = wrong-file@example.invalid\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG", str(ambient_config))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(ambient_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "0")
+    monkeypatch.setenv(
+        "GIT_CONFIG_PARAMETERS",
+        "'user.name'='Wrong Ambient' 'user.email'='wrong-ambient@example.invalid'",
+    )
+    monkeypatch.setenv("GIT_CONFIG_KEY_7", "user.name")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_7", "Wrong Indexed Ambient")
+
+    _commit(repo)
+    fixture_env = _prospective_config_env(repo)
+    result = _run_hook(repo, fixture_env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert fixture_env["HOME"] == str(repo.parent / "configless-home")
+    assert fixture_env["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert fixture_env["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert fixture_env["GIT_CONFIG_KEY_0"] == "user.name"
+    assert fixture_env["GIT_CONFIG_VALUE_0"] == EXPECTED_NAME
+    assert fixture_env["GIT_CONFIG_KEY_1"] == "user.email"
+    assert fixture_env["GIT_CONFIG_VALUE_1"] == EXPECTED_EMAIL
+    assert "GIT_CONFIG" not in fixture_env
+    assert "GIT_CONFIG_PARAMETERS" not in fixture_env
+    assert "GIT_CONFIG_KEY_7" not in fixture_env
+    assert "GIT_CONFIG_VALUE_7" not in fixture_env
 
 
 def test_precommit_workflow_checks_out_and_verifies_the_same_selected_sha() -> None:
