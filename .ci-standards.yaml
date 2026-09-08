@@ -1,12 +1,28 @@
-# Local CI mirror for SessionWeaver. "Does this repo meet the standard?" is
-# `ci-standards check --target .`; "would GitHub Actions pass?" is
-# `ci-standards run-job gates --target . --image ci-standards-runner:latest \
-#     --matrix os:ubuntu-latest --matrix python:3.13`
-# (see ~/code/personal/tools/github_ci_pipeline/README.md).
+# Local CI mirror for SessionWeaver's six-job A7 workflow:
+# `quality` (2 OS x 2 Python) -> `gates`, plus independent `package`,
+# `pre-commit`, `fixture-e2e`, and tag-only `release-guard` jobs.
 #
-# Every check overrides the profile default with this repo's own gate command,
-# matching .github/workflows/ci.yml, so a local pass means the same command CI
-# runs. The workflow's single job is named `gates`.
+# `ci-standards check --target .` runs only the host-side quality commands
+# configured below: Ruff format, Ruff lint, Pyright, and the full non-live pytest
+# suite with warnings-as-errors and the coverage gate. It does not execute the
+# workflow graph, matrix, frozen-sync setup, package provenance, hooks, fixture
+# workflow, or release guard.
+#
+# `ci-standards run-job` is required for workflow-job execution: use
+# `ci-standards run-job quality` for a chosen Linux/Python matrix cell and
+# `run-job package`, `run-job pre-commit`, or `run-job fixture-e2e` for those
+# independent jobs. Use `run-job release-guard` only with a tag event, exact
+# GitHub run metadata, and jobs receipt. `gates` is only the aggregate of
+# completed quality cells, so a host check cannot establish either one.
+#
+# The local act runner also has fidelity limits: PR-head checkout needs a real
+# pull-request event payload to select `github.event.pull_request.head.sha`, and
+# `actions/upload-artifact` cannot provide GitHub-retained package artifacts in
+# a local act run. Treat those paths as local diagnostics; exact GitHub Actions
+# evidence remains mandatory.
+#
+# Every check overrides the profile default with this repo's own quality command,
+# matching .github/workflows/ci.yml.
 
 profile: python-uv
 

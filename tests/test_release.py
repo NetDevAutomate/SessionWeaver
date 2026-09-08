@@ -7,8 +7,10 @@ import importlib.util
 import json
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = "0adeb6c8ef958e453abe5b66d0bca39fdad6c309"
@@ -235,20 +237,164 @@ def test_release_guard_cli_reads_jobs_receipt_and_emits_verified_report(
     }
 
 
-def test_ci_defines_package_precommit_fixture_and_tag_guard_jobs() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+def _ci_workflow() -> dict[Any, Any]:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    assert isinstance(workflow, dict)
+    return workflow
 
-    for job in ("gates", "package", "pre-commit", "fixture-e2e", "release-guard"):
-        assert f"  {job}:" in workflow
-    assert 'tags: ["v*"]' in workflow
-    assert "uv build" in workflow
-    assert "session_weaver.installed_smoke" in workflow
-    assert "dist/*.whl" in workflow
-    assert "dist/*.tar.gz" in workflow
-    assert "pre-commit==4.3.0" in workflow
-    assert "tests/test_workflow_e2e.py" in workflow
-    assert "session_weaver.release_guard" in workflow
-    assert "actions/runs/${GITHUB_RUN_ID}/jobs" in workflow
+
+def _named_steps(job: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {step["name"]: step for step in job["steps"] if "name" in step}
+
+
+def _normalized_run(step: dict[str, Any]) -> str:
+    return " ".join(step["run"].split())
+
+
+def test_ci_job_graph_and_dependencies_are_structurally_pinned() -> None:
+    jobs = _ci_workflow()["jobs"]
+
+    assert set(jobs) == {
+        "quality",
+        "gates",
+        "package",
+        "pre-commit",
+        "fixture-e2e",
+        "release-guard",
+    }
+    assert jobs["quality"]["strategy"]["matrix"] == {
+        "os": ["ubuntu-latest", "macos-latest"],
+        "python": ["3.12", "3.13"],
+    }
+    assert jobs["gates"]["needs"] == "quality"
+    assert jobs["release-guard"]["needs"] == [
+        "gates",
+        "package",
+        "pre-commit",
+        "fixture-e2e",
+    ]
+    for independent_job in ("quality", "package", "pre-commit", "fixture-e2e"):
+        assert "needs" not in jobs[independent_job]
+
+
+def test_ci_precommit_uses_exact_event_sha_and_pinned_runner() -> None:
+    expression = (
+        "${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha || github.sha }}"
+    )
+    precommit = _ci_workflow()["jobs"]["pre-commit"]
+    checkout = next(
+        step for step in precommit["steps"] if step.get("uses") == "actions/checkout@v4"
+    )
+    run_step = _named_steps(precommit)["Run pinned pre-commit suite"]
+
+    assert checkout["with"]["ref"] == expression
+    assert run_step["env"]["CHECK_COMMIT_SHA"] == expression
+    assert run_step["run"] == "uvx --from pre-commit==4.3.0 pre-commit run --all-files"
+
+
+def test_ci_package_job_structurally_pins_dual_artifact_provenance() -> None:
+    package = _ci_workflow()["jobs"]["package"]
+    checkout = next(step for step in package["steps"] if step.get("uses") == "actions/checkout@v4")
+    steps = _named_steps(package)
+
+    assert checkout["with"]["fetch-depth"] == 0
+    assert steps["Build wheel and sdist"]["run"] == "uv build"
+    wheel = _normalized_run(steps["Clean wheel install and provenance smoke"])
+    sdist = _normalized_run(steps["Independent clean sdist install and provenance smoke"])
+    for command, kind, receipt in (
+        (wheel, "wheel", "wheel-install-receipt.json"),
+        (sdist, "sdist", "sdist-install-receipt.json"),
+    ):
+        assert "uv venv --python 3.12" in command
+        assert "uv pip install --python" in command
+        assert "-I -m session_weaver.installed_smoke" in command
+        assert f"--kind {kind}" in command
+        assert '--session-weaver-sha "$GITHUB_SHA"' in command
+        assert f"--receipt {receipt}" in command
+
+    upload = next(
+        step for step in package["steps"] if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert upload["with"]["name"] == "session-weaver-package-${{ github.sha }}"
+    assert set(upload["with"]["path"].splitlines()) == {
+        "dist/*",
+        "wheel-install-receipt.json",
+        "sdist-install-receipt.json",
+    }
+
+
+def test_ci_fixture_e2e_command_is_structurally_pinned() -> None:
+    fixture = _ci_workflow()["jobs"]["fixture-e2e"]
+    run_step = _named_steps(fixture)["Run representative fixture workflow"]
+
+    assert _normalized_run(run_step) == (
+        'uv run pytest tests/test_workflow_e2e.py -m "not live" --no-cov -W error'
+    )
+
+
+def test_ci_release_guard_is_tag_only_and_uses_exact_run_jobs() -> None:
+    workflow = _ci_workflow()
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers is not None
+    guard = workflow["jobs"]["release-guard"]
+    checkout = next(step for step in guard["steps"] if step.get("uses") == "actions/checkout@v4")
+    steps = _named_steps(guard)
+
+    assert triggers["push"]["tags"] == ["v*"]
+    assert guard["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert guard["needs"] == ["gates", "package", "pre-commit", "fixture-e2e"]
+    assert checkout["with"]["fetch-depth"] == 0
+    assert steps["Fetch exact-run job conclusions"]["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert steps["Fetch exact-run job conclusions"]["run"] == (
+        'gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/'
+        '${GITHUB_RUN_ID}/jobs" > "${RUNNER_TEMP}/jobs.json"'
+    )
+    assert _normalized_run(steps["Prove tag SHA equals the green package/gates SHA"]) == (
+        "uv run python -m session_weaver.release_guard "
+        '--tag "$GITHUB_REF_NAME" --green-sha "$GITHUB_SHA" '
+        '--jobs-json "${RUNNER_TEMP}/jobs.json"'
+    )
+
+
+def test_release_sequence_completes_evidence_after_real_guard_before_release() -> None:
+    releasing = (ROOT / "docs" / "RELEASING.md").read_text(encoding="utf-8")
+
+    tag_push = releasing.index("git push origin vX.Y.Z")
+    real_guard = releasing.index("Wait for the real tag workflow")
+    evidence = releasing.index("Complete `docs/data/release-evidence-0.2.0.json`")
+    github_release = releasing.index("gh release create vX.Y.Z")
+
+    assert tag_push < real_guard < evidence < github_release
+    assert "post-tag evidence commit" in releasing
+    assert "not part of the tagged source tree" in " ".join(releasing.split())
+
+
+def test_ci_standards_description_matches_a7_job_boundaries() -> None:
+    path = ROOT / ".ci-standards.yaml"
+    text = path.read_text(encoding="utf-8")
+    config = yaml.safe_load(text)
+
+    assert set(config["checks"]) == {"lint-format", "lint", "typecheck", "test"}
+    for job in (
+        "quality",
+        "gates",
+        "package",
+        "pre-commit",
+        "fixture-e2e",
+        "release-guard",
+    ):
+        assert job in text
+    for boundary in (
+        "runs only the host-side quality commands",
+        "`ci-standards run-job` is required",
+        "PR-head checkout",
+        "upload-artifact",
+        "local act",
+    ):
+        assert boundary in text
 
 
 def test_public_docs_preserve_council_wording_and_release_boundaries() -> None:

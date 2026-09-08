@@ -89,7 +89,7 @@ current behavior.
 | WAL-mode live databases use SQLite Online Backup rather than `cp` in maintained live validation. | `src/session_weaver/ontology_live.py::_create_online_backup`; benchmark/projection live harnesses. | Live safety tests in `tests/test_ontology_live.py`, `tests/test_bench_live.py`, and `tests/test_projection_live.py`. |
 | Cross-machine sync cannot promise propagated forgetting across native transcripts, peers, backups, and notes. | This is an explicit limitation, not a success claim; upstream sync only governs transferred database state. | Review upstream sync contract and retained source systems before making any stronger claim. |
 | Root and packaged skills are byte-identical. | The two tracked `SKILL.md` files. | `tests/test_skill_sync.py`. |
-| The suite contains 503 tests: 498 default-selected and 5 opt-in live. | Pytest collection after A7 packaging and representative workflow coverage. | `uv run pytest --collect-only -q --no-cov` reports `498/503 tests collected (5 deselected)`. |
+| The suite contains 522 tests: 517 default-selected and 5 opt-in live. | Pytest collection after the final review fix wave. | `uv run pytest --collect-only -q --no-cov` reports `517/522 tests collected (5 deselected)`; `tests/test_docs.py::test_public_test_inventory_matches_actual_pytest_collection` derives and compares both public claims to collection output. |
 | Package coverage floor is 90%. | `pyproject.toml:[tool.pytest.ini_options]`. | `uv run pytest -W error`. |
 
 

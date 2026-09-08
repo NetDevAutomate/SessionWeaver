@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from session_weaver.cli import build_parser
@@ -118,6 +120,41 @@ def test_public_docs_remove_superseded_behavior_claims() -> None:
 def test_readme_shows_the_ownership_marker_trailing_lf_exactly() -> None:
     readme = README.read_text(encoding="utf-8")
     assert 'b\'{"owner":"session-weaver","schema":1}\\n\'' in readme
+
+
+def _claimed_test_inventory(document: str) -> tuple[int, int, int]:
+    match = re.search(
+        r"(?:current )?suite contains \**(?P<total>\d+) tests\**: "
+        r"(?P<selected>\d+).*?and (?P<live>\d+) opt-in",
+        document,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert match is not None, "public test inventory claim is missing"
+    return (
+        int(match.group("total")),
+        int(match.group("selected")),
+        int(match.group("live")),
+    )
+
+
+def test_public_test_inventory_matches_actual_pytest_collection() -> None:
+    collection = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-cov"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = re.search(
+        r"(?P<selected>\d+)/(?P<total>\d+) tests collected "
+        r"\((?P<deselected>\d+) deselected\)",
+        collection.stdout,
+    )
+    assert summary is not None, collection.stdout
+    actual = tuple(int(summary.group(name)) for name in ("total", "selected", "deselected"))
+
+    assert _claimed_test_inventory(README.read_text(encoding="utf-8")) == actual
+    assert _claimed_test_inventory(CLAIMS_AUDIT.read_text(encoding="utf-8")) == actual
 
 
 def test_claims_audit_maps_public_claims_to_maintained_evidence() -> None:

@@ -37,7 +37,8 @@ gh api repos/NetDevAutomate/SessionWeaver/branches/main/protection
 1. Complete the mandatory independent whole-branch review. Close and re-review every Critical or
    Important finding.
 2. Merge to `main`; do not tag yet.
-3. Record the exact merge SHA, then wait for the `gates`, `package`, `pre-commit`, and
+3. Apply and verify the `main` protection rule from the preceding section.
+4. Record the exact merge SHA, then wait for the `gates`, `package`, `pre-commit`, and
    `fixture-e2e` jobs to finish successfully at that SHA. Retain the CI run ID and the wheel/sdist
    artifact receipts.
 
@@ -47,7 +48,7 @@ gh api repos/NetDevAutomate/SessionWeaver/branches/main/protection
    gh run list --repo NetDevAutomate/SessionWeaver --commit "$release_sha"
    ```
 
-4. Run the release guard against the completed run's jobs and verify version, dated CHANGELOG
+5. Run the release guard against the completed run's jobs and verify version, dated CHANGELOG
    heading, compare links, and the prospective tag target. The tag-SHA job in CI omits
    `--tag-sha`, resolves the real tag itself, and repeats the proof after tag creation.
 
@@ -63,15 +64,27 @@ gh api repos/NetDevAutomate/SessionWeaver/branches/main/protection
      --jobs-json /tmp/sessionweaver-release-jobs.json
    ```
 
-5. Create an annotated tag **only after** exact-SHA green CI:
+6. Create an annotated tag **only after** exact-SHA green CI and the prospective guard:
 
    ```bash
    git tag -a vX.Y.Z "$release_sha" -m "Session Weaver X.Y.Z"
    git push origin vX.Y.Z
    ```
 
-6. Copy the `## [X.Y.Z]` section from `CHANGELOG.md` into `/tmp/session-weaver-X.Y.Z.md`, then
-   create the GitHub release from that CHANGELOG text:
+7. Wait for the real tag workflow's `release-guard` job to finish successfully. Retain its exact
+   run ID, tag SHA, job conclusions, and guard result; a prospective pass does not substitute for
+   this real-tag proof.
+
+8. Complete `docs/data/release-evidence-0.2.0.json` with artifact hashes, both clean-install
+   environments, dependency and Session Weaver SHAs, CI run IDs, fixture/live e2e receipts,
+   independent-review disposition, protection state, and the successful real-tag release-guard
+   result. Commit and retain that completed index on `main` before creating the GitHub release.
+   This is a **post-tag evidence commit**: it records release evidence and is not part of the
+   tagged source tree. Never move or recreate the tag to include it.
+
+9. Copy the `## [X.Y.Z]` section from `CHANGELOG.md` into `/tmp/session-weaver-X.Y.Z.md`, then
+   create the GitHub release from that CHANGELOG text only after the completed evidence index is
+   retained:
 
    ```bash
    gh release create vX.Y.Z \
@@ -80,10 +93,6 @@ gh api repos/NetDevAutomate/SessionWeaver/branches/main/protection
      --title "Session Weaver X.Y.Z" \
      --notes-file /tmp/session-weaver-X.Y.Z.md
    ```
-
-7. Complete `docs/data/release-evidence-0.2.0.json` with artifact hashes, both clean-install
-   environments, dependency and Session Weaver SHAs, CI run IDs, fixture/live e2e receipts,
-   independent-review disposition, protection state, and release-guard result.
 
 ## Installation qualification
 
