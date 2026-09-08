@@ -11,22 +11,43 @@ install exposes the `session-*` tools plus the `session-weaver` CLI and agent sk
 The maintained session-tool implementation and database schema remain owned by the
 [StudyLoop monorepo](https://github.com/NetDevAutomate/StudyLoop) package
 `packages/agent-session-tools`; this repository consumes that source at a pinned commit rather
-than forking it. Phase B's StudyLoop retrofit has not landed in this distribution, so MCP
-registration, seed-snapshot ontology sanitization, and cross-machine concept replication are not
-claimed here.
+than forking it. The standalone installer does not provision user-managed `session-export` freshness automation,
+MCP registration, or MCP liveness. Doctor reports registration as a report-only diagnostic; it
+is not installed-package certification or server-liveness proof. Phase B's StudyLoop retrofit,
+seed-snapshot sanitization, cross-machine concept replication or convergence, propagated
+forgetting, embeddings, ontology-backed recall, and target-band quality have not landed and are
+not claimed by `0.2.0`.
 
 ## Install
 
+An unqualified pre-merge Git install follows the repository default branch; it does **not**
+install an unmerged review branch. During review, use either a reviewed local checkout or an
+explicitly pinned revision:
+
 ```bash
-uv tool install --from git+https://github.com/NetDevAutomate/SessionWeaver session-weaver
-# Local checkout
+# Reviewed local checkout
 uv tool install --from /path/to/session_weaver session-weaver
+# Explicitly pinned revision
+uv tool install \
+  --from git+https://github.com/NetDevAutomate/SessionWeaver@<reviewed-sha> \
+  session-weaver
+```
+
+After merge, a post-merge unqualified install follows the updated default branch. A released
+operator install should prefer the immutable tag:
+
+```bash
+uv tool install \
+  --from git+https://github.com/NetDevAutomate/SessionWeaver@v0.2.0 \
+  session-weaver
 ```
 
 The install exposes `session-weaver`, `session-export`, `session-query`, `session-context`,
 `session-sync`, `session-repair`, and `session-maint`. If another `agent-session-tools` uv tool
 already owns the same `session-*` executable names, choose which distribution owns those names;
-`uv tool install --force` replaces the existing tool's executable links.
+`uv tool install --force` replaces the existing tool's executable links. Source-tree tests do not
+prove installed artifacts: release evidence independently installs and verifies both the wheel
+and sdist in clean environments.
 
 ### Wire the skill into your harnesses
 
@@ -124,7 +145,7 @@ foreign-key, domain/range, and logical-hash dimensions. The live acceptance harn
 a SQLite Online Backup and compares source sentinels before deleting the backup.
 
 Ontology tables are absent from pinned normal/global delta-sync allow lists. The pinned
-first-time `_seed_remote_db` path still transfers a whole SQLite Online Backup and can therefore
+first-time whole-file seed (`_seed_remote_db`) transfers a SQLite Online Backup and can therefore
 carry existing derived rows. Phase B B2 owns seed sanitization and destination-local rebuild;
 until it lands, "excluded from delta sync" must not be paraphrased as "never travels by any sync
 path."
@@ -140,7 +161,7 @@ properties were unchanged. These are corpus-growth deltas, not a change to extra
 
 ## A6 measured posture
 
-The current corpus posture is **post-fix/eligible** (`fb606468` exporter). At k=5, all 25 frozen
+The A6 corpus posture was **post-fix/eligible** on exporter `fb606468`. At k=5, all 25 frozen
 questions were visibility-eligible, so all-25 and visible-subset results are identical:
 
 | Category | Recall@5 | Wilson 95% CI | MRR@5 | Wilson 95% CI |
@@ -150,11 +171,17 @@ questions were visibility-eligible, so all-25 and visible-subset results are ide
 | P | 0.250000 | [0.071478, 0.590730] | 0.156250 | [0.032809, 0.502727] |
 | R | 0.666667 | [0.299988, 0.903231] | 0.583333 | [0.241074, 0.860536] |
 
-The measured verdict is **INVESTIGATE**. Every fixed category floor passed, but overall recall is
-below the 0.64 target. Current **25/25** visibility is **not directly comparable** to the frozen
-PoC's 22 IDs. The same-visibility raw-text positive control was **PASS** at 0.480000 recall /
-0.312000 MRR. The separate corpus-verified directional P set scored **0/40** (0.000000 recall /
-0.000000 MRR) and is a **non-gating** directional warning.
+Recall@5 is `0.600000`, every fixed category floor passed, overall remained below the `0.64` target, and the verdict is **INVESTIGATE**. The overall Recall@5 interval remains wide at
+`[0.407391, 0.765969]`. Current **25/25** visibility is **not directly comparable** to the frozen
+PoC's 22 IDs, and the evaluated concept corpus consisted of 2,033 imported legacy-unbound roots;
+those are recall-visible historical signal, not accepted or exact-cited assertions. The published
+MRR intervals are generalized score intervals over reciprocal-rank values, not exact binomial
+confidence intervals. The same-visibility raw-text positive control was **PASS** at 0.480000
+recall / 0.312000 MRR.
+
+The separate corpus-verified directional P set returned zero hits across 40 queries comprising five paraphrases for each of eight target-fact clusters; it is non-gating, and its Wilson 95% interval [0.000000, 0.087625] is a query-level calculation assuming independent queries, not a cluster-aware eight-target interval.
+This is the retained **0/40** directional result.
+
 Tier-1 ontology rebuild was parity preparation only and was never a recall input.
 
 Historical PoC values are retained only as history: concept-only 0.64/0.50 and unshipped fusion
@@ -182,7 +209,7 @@ uv run ruff format --check .
 uv run pyright
 ```
 
-The current suite contains **493 tests**: 489 selected by the default non-live run and 4 opt-in
+The current suite contains **503 tests**: 498 selected by the default non-live run and 5 opt-in
 live tests. Package coverage is required to remain at least 90%. The ontology live test requires
 an explicit source and writes retained evidence only when an explicit target is supplied:
 

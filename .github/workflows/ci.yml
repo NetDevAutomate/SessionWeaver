@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, "feat/**", "fix/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -11,11 +12,12 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  gates:
-    name: ${{ matrix.os }} / py${{ matrix.python }}
+  quality:
+    name: quality (${{ matrix.os }} / py${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -37,3 +39,99 @@ jobs:
         run: uv run pyright
       - name: Test (non-live, warnings as errors, coverage gate)
         run: uv run pytest -W error
+
+  gates:
+    name: gates
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm every quality matrix cell passed
+        run: test "${{ needs.quality.result }}" = success
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Build wheel and sdist
+        run: uv build
+      - name: Clean wheel install and provenance smoke
+        shell: bash
+        run: |
+          wheel=$(python -c 'import glob; print(glob.glob("dist/*.whl")[0])')
+          uv venv --python 3.12 .package-wheel
+          uv pip install --python .package-wheel/bin/python "$wheel"
+          .package-wheel/bin/python -I -m session_weaver.installed_smoke \
+            --artifact "$wheel" --kind wheel --session-weaver-sha "$GITHUB_SHA" \
+            --receipt wheel-install-receipt.json
+      - name: Independent clean sdist install and provenance smoke
+        shell: bash
+        run: |
+          sdist=$(python -c 'import glob; print(glob.glob("dist/*.tar.gz")[0])')
+          uv venv --python 3.12 .package-sdist
+          uv pip install --python .package-sdist/bin/python "$sdist"
+          .package-sdist/bin/python -I -m session_weaver.installed_smoke \
+            --artifact "$sdist" --kind sdist --session-weaver-sha "$GITHUB_SHA" \
+            --receipt sdist-install-receipt.json
+      - name: Retain artifact and install receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-weaver-package-${{ github.sha }}
+          path: |
+            dist/*
+            wheel-install-receipt.json
+            sdist-install-receipt.json
+
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync from the frozen lock
+        run: uv sync --frozen --python 3.12
+      - name: Run pinned pre-commit suite
+        run: uvx --from pre-commit==4.3.0 pre-commit run --all-files
+
+  fixture-e2e:
+    name: fixture-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync from the frozen lock
+        run: uv sync --frozen --python 3.12
+      - name: Run representative fixture workflow
+        run: >-
+          uv run pytest tests/test_workflow_e2e.py
+          -m "not live" --no-cov -W error
+
+  release-guard:
+    name: release-guard
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [gates, package, pre-commit, fixture-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - name: Fetch exact-run job conclusions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" > "${RUNNER_TEMP}/jobs.json"
+      - name: Prove tag SHA equals the green package/gates SHA
+        run: >-
+          uv run python -m session_weaver.release_guard
+          --tag "$GITHUB_REF_NAME"
+          --green-sha "$GITHUB_SHA"
+          --jobs-json "${RUNNER_TEMP}/jobs.json"

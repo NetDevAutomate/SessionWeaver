@@ -7,7 +7,19 @@ may change before `1.0.0`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-08
+
+Session Weaver 0.2.0 packages the reviewed Phase A concept, recall, ontology, doctor, and
+benchmark work with representative workflow coverage and exact installed-artifact release gates.
+The release remains bounded by the documented INVESTIGATE result and Phase B exclusions.
+
 ### Added
+
+- Added independent clean wheel and sdist installation provenance checks for every re-exported
+  console script, including exact `session-export` resolution to CI-green StudyLoop commit
+  `0adeb6c8ef958e453abe5b66d0bca39fdad6c309` descended from exporter fix `7f9a19ec`.
+- Added representative fixture and live Online Backup workflow acceptance, pinned pre-commit CI,
+  package receipts, exact tag/green-SHA release guard, and `docs/RELEASING.md`.
 
 - Added A5 functional doctor controls: real known-term recall, exact concept-sidecar and
   full-tuple FTS digest verification, per-harness session-db MCP registration diagnostics,
@@ -168,5 +180,6 @@ may change before `1.0.0`.
 - Community files: contributor guide, Contributor Covenant 2.1, security
   policy, third-party notices, MIT license.
 
-[Unreleased]: https://github.com/NetDevAutomate/SessionWeaver/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/NetDevAutomate/SessionWeaver/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/NetDevAutomate/SessionWeaver/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NetDevAutomate/SessionWeaver/releases/tag/v0.1.0

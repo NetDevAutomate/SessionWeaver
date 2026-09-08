@@ -1,0 +1,54 @@
+{
+  "schema": "sessionweaver-release-evidence-v1",
+  "version": "0.2.0",
+  "state": "prepared-not-release-authorized",
+  "agent_session_tools": {
+    "sha": "0adeb6c8ef958e453abe5b66d0bca39fdad6c309",
+    "exporter_fix_ancestor": "7f9a19ec03a592b3892ab60f2bcca316a1430d4a",
+    "ancestry_verified": true,
+    "public_branch": "main",
+    "exact_sha_ci": {
+      "run_id": 34160855304,
+      "conclusion": "success",
+      "url": "https://github.com/NetDevAutomate/StudyLoop/actions/runs/34160855304"
+    }
+  },
+  "session_weaver": {
+    "tested_sha": "7366a238310fa6bb413c6f9b298bd3543ffd5fe2+dirty-a7",
+    "merge_sha": null
+  },
+  "artifacts": {
+    "wheel": {
+      "sha256": null,
+      "clean_environment": null,
+      "receipt": "CI package artifact (pending exact-SHA run)"
+    },
+    "sdist": {
+      "sha256": null,
+      "clean_environment": null,
+      "receipt": "CI package artifact (pending exact-SHA run)"
+    }
+  },
+  "e2e": {
+    "fixture": "tests/test_workflow_e2e.py::test_representative_fixture_workflow",
+    "live": "docs/data/workflow-e2e-baseline.json",
+    "source_sentinels_unchanged": true
+  },
+  "ci": {
+    "branch_run_id": null,
+    "merge_run_id": null,
+    "exact_merge_sha_green": false
+  },
+  "independent_review": {
+    "disposition": null,
+    "critical_important_open": null
+  },
+  "branch_protection": {
+    "documented": "docs/RELEASING.md",
+    "applied": false
+  },
+  "release_guard": {
+    "local_result": "pass (prospective tag/SHA inputs on dirty A7 worktree)",
+    "tag_result": null
+  }
+}

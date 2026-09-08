@@ -10,6 +10,20 @@ Session Weaver reads captured sessions and evidence-backed concepts from one SQL
 binding is checked separately. Tier-1 ontology data is derived diagnostics and is not a recall
 input.
 
+## Installation and release boundary
+
+An unqualified pre-merge Git install follows the repository default branch. During review use a
+reviewed local checkout or explicitly pinned revision; only a post-merge install from the default
+branch contains merged A7 work. `uv tool install --force` can replace executable links owned by a
+separate `agent-session-tools` installation, so choose one owner deliberately. Source-tree tests
+do not prove installed artifacts; release evidence installs the wheel and sdist independently.
+
+The standalone installer does not provision user-managed `session-export` freshness automation,
+MCP registration, or MCP liveness. Doctor's MCP checks are a report-only diagnostic, not
+installed-package certification or server-liveness proof. Phase B's StudyLoop retrofit,
+seed-snapshot sanitization, cross-machine concept replication or convergence, propagated
+forgetting, embeddings, ontology-backed recall, and target-band quality are excluded from `0.2.0`.
+
 ## Read path
 
 ### 1. Recall concepts, then source sessions
@@ -106,12 +120,18 @@ visibility-eligible results were identical:
 | P | 0.250000 | [0.071478, 0.590730] | 0.156250 | [0.032809, 0.502727] |
 | R | 0.666667 | [0.299988, 0.903231] | 0.583333 | [0.241074, 0.860536] |
 
-The verdict is **INVESTIGATE**: every category floor passed, but overall recall remained below the
-0.64 target. Current 25/25 visibility is **not directly comparable** to the frozen PoC's 22 IDs.
-The same-visibility raw-text positive control was **PASS** at 0.480000 recall / 0.312000 MRR. A
-separate corpus-verified directional P set scored **0/40** (0.000000 recall / 0.000000 MRR); it is
-a **non-gating** warning. Tier-1 ontology rebuild was parity preparation only and was never a
-recall input.
+Recall@5 is `0.600000`, every fixed category floor passed, overall remained below the `0.64` target, and the verdict is **INVESTIGATE**. The overall Recall@5 interval remains wide at
+`[0.407391, 0.765969]`. Current 25/25 visibility is **not directly comparable** to the frozen
+PoC's 22 IDs, and the evaluated concept corpus consisted of 2,033 imported legacy-unbound roots;
+those are recall-visible historical signal, not accepted or exact-cited assertions. The published
+MRR intervals are generalized score intervals over reciprocal-rank values, not exact binomial
+confidence intervals. The same-visibility raw-text positive control was **PASS** at 0.480000
+recall / 0.312000 MRR.
+
+The separate corpus-verified directional P set returned zero hits across 40 queries comprising five paraphrases for each of eight target-fact clusters; it is non-gating, and its Wilson 95% interval [0.000000, 0.087625] is a query-level calculation assuming independent queries, not a cluster-aware eight-target interval.
+This is the retained **0/40** directional result.
+
+Tier-1 ontology rebuild was parity preparation only and was never a recall input.
 
 Historical context only: the earlier PoC reported concept-only 0.64/0.50 and unshipped fusion
 0.68/0.50. Those values are not the current measured gate and do not describe shipped fusion or

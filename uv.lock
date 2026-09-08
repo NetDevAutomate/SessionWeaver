@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "agent-session-tools"
 version = "0.1.0"
-source = { git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=c8315ccb74a7255446396fe616dddd684e1b0d14#c8315ccb74a7255446396fe616dddd684e1b0d14" }
+source = { git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=0adeb6c8ef958e453abe5b66d0bca39fdad6c309#0adeb6c8ef958e453abe5b66d0bca39fdad6c309" }
 dependencies = [
     { name = "fastmcp" },
     { name = "python-dotenv" },
@@ -1310,8 +1310,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -1320,7 +1320,7 @@ wheels = [
 
 [[package]]
 name = "session-weaver"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-session-tools" },
@@ -1337,7 +1337,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-session-tools", git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=c8315ccb74a7255446396fe616dddd684e1b0d14" },
+    { name = "agent-session-tools", git = "https://github.com/NetDevAutomate/StudyLoop.git?subdirectory=packages%2Fagent-session-tools&rev=0adeb6c8ef958e453abe5b66d0bca39fdad6c309" },
     { name = "pyyaml", specifier = "==6.0.3" },
 ]
 
