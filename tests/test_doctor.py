@@ -10,7 +10,9 @@ import pytest
 
 import session_weaver.ontology as ontology
 from session_weaver.cli import main
+from session_weaver.concepts import ConceptService
 from session_weaver.ontology import EXTRACTION_VERSION, rebuild_ontology
+from session_weaver.recall import RecallReport, plan
 
 
 class ProductionStore(Protocol):
@@ -18,6 +20,56 @@ class ProductionStore(Protocol):
 
     conn: sqlite3.Connection
     db_path: Path
+
+
+def _insert_concept_sentinel(store: ProductionStore) -> None:
+    quote = store.conn.execute(
+        """SELECT body FROM context_evidence
+           WHERE session_id='fixture-session-1'
+             AND body='How does fixture session 1 reach context evidence?'"""
+    ).fetchone()[0]
+    result = ConceptService(store.db_path).winddown(
+        "fixture-session-1",
+        {
+            "concepts": [
+                {
+                    "type": "Finding",
+                    "title": "Doctorrecallsentinel memory probe",
+                    "description": "Doctorrecallsentinel proves concept recall is operational.",
+                    "tags": ["doctor", "positive-control"],
+                    "confidence": 0.9,
+                    "quotes": [{"quote": quote}],
+                }
+            ]
+        },
+        actor="doctor-test",
+    )
+    assert result.writes > 0
+
+
+def _install_mcp_configs(home: Path) -> None:
+    (home / ".claude.json").write_text(
+        '{"mcpServers":{"session-db":{"command":"session-db-mcp"}}}\n',
+        encoding="utf-8",
+    )
+    kiro = home / ".kiro" / "settings"
+    kiro.mkdir(parents=True)
+    (kiro / "mcp.json").write_text(
+        '{"mcpServers":{"session-db":{"command":"session-db-mcp"}}}\n',
+        encoding="utf-8",
+    )
+    codex = home / ".codex"
+    codex.mkdir()
+    (codex / "config.toml").write_text(
+        '[mcp_servers.session-db]\ncommand = "session-db-mcp"\n',
+        encoding="utf-8",
+    )
+
+
+def _install_grok_skill(home: Path) -> None:
+    target = home / ".grok" / "skills" / "session-weaver"
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_text("---\nname: session-weaver\n---\n", encoding="utf-8")
 
 
 def _install_tool_stubs(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,6 +103,7 @@ def _prepare_healthy_store(
     _insert_doctor_sentinel(store.conn)
     monkeypatch.setattr(ontology, "_utc_now", lambda: "9998-01-01T00:00:00Z")
     rebuild_ontology(store.conn)
+    _insert_concept_sentinel(store)
 
 
 def _assert_closed(conn: sqlite3.Connection) -> None:
@@ -69,6 +122,8 @@ def test_doctor_reports_healthy_ontology(
 ) -> None:
     _prepare_healthy_store(production_store, monkeypatch)
     _install_tool_stubs(tmp_path, monkeypatch)
+    _install_mcp_configs(Path.home())
+    _install_grok_skill(Path.home())
 
     rc = main(["doctor", "--db", str(production_store.db_path)])
     out = capsys.readouterr().out
@@ -79,6 +134,12 @@ def test_doctor_reports_healthy_ontology(
     assert "coverage=100.00%" in out
     assert "fresh=ok" in out
     assert "hash=ok" in out
+    assert "ok    concept sidecar schema=2 rows=1 fts-consistent digest=" in out
+    assert "ok    recall positive control term=doctorrecallsentinel results=" in out
+    assert "ok    mcp claude session-db registered" in out
+    assert "ok    mcp kiro session-db registered" in out
+    assert "ok    mcp codex session-db registered" in out
+    assert "ok    grok skill installed" in out
 
 
 def test_doctor_reports_missing_ontology(
@@ -157,7 +218,7 @@ def test_doctor_reports_logical_hash_tamper(
     assert "logical hash mismatch" in out
 
 
-def test_doctor_closes_its_only_read_connection(
+def test_doctor_closes_every_read_connection(
     production_store: ProductionStore,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -175,8 +236,9 @@ def test_doctor_closes_its_only_read_connection(
     monkeypatch.setattr(sqlite3, "connect", tracked_connect)
 
     assert main(["doctor", "--db", str(production_store.db_path)]) == 0
-    assert len(opened) == 1
-    _assert_closed(opened[0])
+    assert len(opened) >= 2
+    for conn in opened:
+        _assert_closed(conn)
 
 
 def test_doctor_reports_unreadable_store(
@@ -260,3 +322,62 @@ def test_doctor_contains_unexpected_ontology_failure_and_continues_checks(
     assert "ok    session-query ->" in out
     assert "ok    session-sync ->" in out
     assert "ok    session-repair ->" in out
+
+
+def test_doctor_treats_mcp_registration_and_missing_grok_skill_as_report_only(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "INFO  mcp claude session-db not registered" in out
+    assert "INFO  mcp kiro session-db not registered" in out
+    assert "INFO  mcp codex session-db not registered" in out
+    assert "INFO  grok skill absent" in out
+
+
+def test_doctor_treats_inconsistent_concept_sidecar_as_fatal(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    production_store.conn.execute("DELETE FROM context_concept_fts")
+    production_store.conn.commit()
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "FAIL  concept sidecar FTS inconsistent" in out
+
+
+def test_doctor_treats_empty_recall_positive_control_as_fatal(
+    production_store: ProductionStore,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_healthy_store(production_store, monkeypatch)
+    _install_tool_stubs(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "session_weaver.cli.recall",
+        lambda *_args, **_kwargs: RecallReport(
+            concepts=(), sessions=(), plan=plan("doctorrecallsentinel"), k=1, project=None
+        ),
+    )
+
+    rc = main(["doctor", "--db", str(production_store.db_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "FAIL  recall positive control returned no results" in out

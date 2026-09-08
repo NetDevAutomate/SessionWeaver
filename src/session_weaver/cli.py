@@ -8,6 +8,7 @@ import os
 import sqlite3
 import stat
 import sys
+import tomllib
 from contextlib import closing, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -27,13 +28,18 @@ from .bench import (
     validate_gold,
     write_outputs,
 )
+from .concept_schema import (
+    SCHEMA_VERSION,
+    _inspect_fts_consistency,
+    verify_installed_schema,
+)
 from .concepts import BatchResult, BindResult, ConceptService, TransitionResult
 from .harnesses import HARNESSES, parse_harness_selection
 from .installer import install_skill, status, uninstall_skill
 from .okf import ImportReport
 from .ontology import OntologyError, OntologyStatus, ontology_status, rebuild_ontology
 from .projection import ProjectionReport
-from .recall import RecallReport, recall
+from .recall import RecallReport, plan, recall
 from .safe_fs import _FILE_CREATE_FLAGS, _open_directory_nofollow
 from .winddown import MAX_REQUEST_BYTES, _Issue
 
@@ -737,6 +743,105 @@ def _print_doctor_ontology(result: OntologyStatus) -> int:
     return 1
 
 
+def _doctor_concept_sidecar(conn: sqlite3.Connection) -> int:
+    try:
+        verify_installed_schema(conn)
+        receipt = _inspect_fts_consistency(conn)
+    except Exception:
+        print("FAIL  concept sidecar unavailable or invalid")
+        return 1
+    if not receipt.consistent:
+        print(
+            "FAIL  concept sidecar FTS inconsistent: "
+            f"rows={receipt.row_count}/{receipt.expected_count} "
+            f"expected={receipt.digest} actual={receipt.actual_digest}"
+        )
+        return 1
+    print(
+        f"ok    concept sidecar schema={SCHEMA_VERSION} rows={receipt.row_count} "
+        f"fts-consistent digest={receipt.digest}"
+    )
+    return 0
+
+
+def _known_recall_term(conn: sqlite3.Connection) -> str | None:
+    sources: list[str] = []
+    with suppress(sqlite3.DatabaseError):
+        sources.extend(
+            " ".join(str(value) for value in row if value is not None)
+            for row in conn.execute(
+                "SELECT title,statement FROM context_concept_fts ORDER BY concept_id LIMIT 20"
+            )
+        )
+    sources.extend(
+        str(row[0])
+        for row in conn.execute(
+            "SELECT content FROM messages WHERE content IS NOT NULL ORDER BY id LIMIT 20"
+        )
+    )
+    for source in sources:
+        terms = plan(source).terms
+        if terms:
+            return terms[0]
+    return None
+
+
+def _doctor_recall(db: Path, term: str | None) -> int:
+    if term is None:
+        print("INFO  recall positive control unavailable: no searchable term")
+        return 0
+    try:
+        report = recall(db, term, k=1)
+    except Exception:
+        print("FAIL  recall positive control failed")
+        return 1
+    result_count = len(report.concepts) + len(report.sessions)
+    if result_count < 1:
+        print(f"FAIL  recall positive control returned no results for term={term}")
+        return 1
+    print(f"ok    recall positive control term={term} results={result_count}")
+    return 0
+
+
+def _session_db_registered(payload: object, key: str) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    servers = payload.get(key)
+    if not isinstance(servers, dict):
+        return False
+    return any(str(name).replace("_", "-") == "session-db" for name in servers)
+
+
+def _doctor_mcp_registration(home: Path) -> None:
+    checks = (
+        ("claude", home / ".claude.json", "json", "mcpServers"),
+        ("kiro", home / ".kiro/settings/mcp.json", "json", "mcpServers"),
+        ("codex", home / ".codex/config.toml", "toml", "mcp_servers"),
+    )
+    for harness, path, format_name, key in checks:
+        try:
+            if format_name == "json":
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            else:
+                payload = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, tomllib.TOMLDecodeError):
+            registered = False
+        else:
+            registered = _session_db_registered(payload, key)
+        if registered:
+            print(f"ok    mcp {harness} session-db registered: {path}")
+        else:
+            print(f"INFO  mcp {harness} session-db not registered: {path}")
+
+
+def _doctor_grok_skill(home: Path) -> None:
+    target = HARNESSES["grok"].resolved_skills_dir(home) / "session-weaver"
+    if target.exists():
+        print(f"ok    grok skill installed: {target}")
+    else:
+        print(f"INFO  grok skill absent: {target}")
+
+
 def _doctor(db_arg: str | None) -> int:
     import shutil as _shutil
 
@@ -757,6 +862,9 @@ def _doctor(db_arg: str | None) -> int:
                 except Exception:
                     print("FAIL  ontology inspection failed")
                     failures += 1
+                failures += _doctor_concept_sidecar(conn)
+                recall_term = _known_recall_term(conn)
+            failures += _doctor_recall(db, recall_term)
         except sqlite3.Error as exc:
             print(f"FAIL  session store {db}: unreadable ({exc})")
             failures += 1
@@ -770,6 +878,9 @@ def _doctor(db_arg: str | None) -> int:
         else:
             print(f"FAIL  {tool} not on PATH")
             failures += 1
+    home = Path.home()
+    _doctor_mcp_registration(home)
+    _doctor_grok_skill(home)
     return 1 if failures else 0
 
 

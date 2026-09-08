@@ -69,7 +69,7 @@ def test_live_copy_acceptance_mutates_only_backup_and_returns_sanitized_evidence
     assert _sha256(production_store.db_path) == source_hash_before
     assert _backup_artifacts(tmp_path) == set()
     assert evidence["evidence_schema"] == "session-weaver.ontology-tier1-baseline"
-    assert evidence["evidence_version"] == 2
+    assert evidence["evidence_version"] == 3
     assert len(evidence["source"]["online_backup_sha256"]) == 64
     assert "sha256" not in evidence["source"]
     assert set(evidence["backup"]) == {"post_rebuild_sha256"}
@@ -84,6 +84,7 @@ def test_live_copy_acceptance_mutates_only_backup_and_returns_sanitized_evidence
         evidence["incremental_rebuild"]["logical_hash"]
         == evidence["second_full_rebuild"]["logical_hash"]
     )
+    assert evidence["incremental_rebuild"]["candidate_sessions"] == 0
     assert evidence["status"]["healthy"] is True
     assert evidence["source_sentinels_unchanged"] is True
     for forbidden in (
@@ -191,6 +192,7 @@ def test_real_corpus_online_backup_acceptance() -> None:
         evidence["incremental_rebuild"]["logical_hash"]
         == evidence["second_full_rebuild"]["logical_hash"]
     )
+    assert evidence["incremental_rebuild"]["candidate_sessions"] == 0
     assert evidence["status"]["healthy"] is True
     assert str(source) not in json.dumps(evidence, sort_keys=True)
 

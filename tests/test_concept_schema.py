@@ -331,6 +331,28 @@ def test_fts_consistency_receipt_and_rebuild_are_stable_and_content_derived(
     assert rebuilt.digest == repeated.digest == before.digest
 
 
+def test_fts_consistency_digest_is_stable_for_duplicate_ids_in_any_insertion_order(
+    production_store: ProductionStore,
+) -> None:
+    conn = production_store.conn
+    _ensure_schema(conn)
+    concept_id, _event_id = _seed_legacy(conn, suffix="duplicate", origin_seq=1)
+
+    def digest_for(rows: list[tuple[str, str, str, str]]) -> str:
+        conn.execute("DELETE FROM context_concept_fts WHERE concept_id=?", (concept_id,))
+        conn.executemany(
+            """INSERT INTO context_concept_fts(title,statement,tags,kind,concept_id)
+               VALUES (?,?,?,?,?)""",
+            [(*row, concept_id) for row in rows],
+        )
+        return _fts_consistency(conn).actual_digest
+
+    first = ("Alpha", "first statement", "alpha duplicate", "Finding")
+    second = ("Beta", "second statement", "beta duplicate", "Decision")
+
+    assert digest_for([first, second]) == digest_for([second, first])
+
+
 def test_sidecar_v2_allows_null_session_only_for_unavailable_legacy_roots(
     production_store: ProductionStore,
 ) -> None:

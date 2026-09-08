@@ -1,31 +1,32 @@
 {
   "backup": {
-    "post_rebuild_sha256": "7dc6f83398f8991bb6dd72eac1680584cfd00cdb0c2d0ec49c27e2b0269bedeb"
+    "post_rebuild_sha256": "d742aa4bddb869fe81e41c67b07bdd75eb5982249320ac735136d35f25e592c5"
   },
-  "captured_at_utc": "2026-09-07T15:03:50Z",
+  "captured_at_utc": "2026-09-08T04:45:01Z",
   "counts": {
     "classes": 7,
-    "individuals": 13336,
+    "individuals": 13528,
     "properties": 6,
-    "relations": 28766,
-    "structural": 22800
+    "relations": 29475,
+    "structural": 23241
   },
   "coverage": {
     "coverage_ratio": 1.0,
-    "covered_sessions": 5678,
+    "covered_sessions": 5813,
     "missing_sessions": 0
   },
   "evidence_schema": "session-weaver.ontology-tier1-baseline",
-  "evidence_version": 2,
+  "evidence_version": 3,
   "extraction_version": "tier1-v2-canonical-messages",
   "first_full_rebuild": {
-    "elapsed_seconds": 3.279245,
-    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb"
+    "elapsed_seconds": 3.424478,
+    "logical_hash": "283430d2541cff1a0950b7d839f879dd1f29ae030f9d40fb3bf1ddc4def1eae4"
   },
   "incremental_rebuild": {
-    "elapsed_seconds": 1.091037,
+    "candidate_sessions": 0,
+    "elapsed_seconds": 1.120871,
     "fallback_reason": null,
-    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb",
+    "logical_hash": "283430d2541cff1a0950b7d839f879dd1f29ae030f9d40fb3bf1ddc4def1eae4",
     "mode": "incremental"
   },
   "integrity": {
@@ -35,14 +36,14 @@
     "orphan_structural_rows": 0
   },
   "second_full_rebuild": {
-    "elapsed_seconds": 3.298231,
-    "logical_hash": "25f1e528ad32e8fea4d18b4a3934145d587fa112cbccc26e7e78dd5aa5b28ddb"
+    "elapsed_seconds": 3.277143,
+    "logical_hash": "283430d2541cff1a0950b7d839f879dd1f29ae030f9d40fb3bf1ddc4def1eae4"
   },
   "source": {
-    "message_count": 133559,
-    "online_backup_sha256": "a9f87008c1129f3aac670d1b1c2cd1900598e37c9e0ab4d1a72d83ccca35f5e7",
+    "message_count": 139633,
+    "online_backup_sha256": "c7cde4d157e64e49ef15a2701c249b54a131b5b951394b2e3dcaed9c9c8b59f6",
     "schema_version": 544,
-    "session_count": 5678,
+    "session_count": 5813,
     "user_version": 47
   },
   "source_sentinels_unchanged": true,

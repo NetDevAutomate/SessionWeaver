@@ -24,7 +24,7 @@ from .ontology import (
 )
 
 _EVIDENCE_SCHEMA = "session-weaver.ontology-tier1-baseline"
-_EVIDENCE_VERSION = 2
+_EVIDENCE_VERSION = 3
 _MAX_COLD_REBUILD_SECONDS = 5.0
 
 
@@ -107,6 +107,8 @@ def _validate_acceptance(
         raise RuntimeError("incremental no-op changed the logical hash")
     if incremental.mode != "incremental" or incremental.fallback_reason is not None:
         raise RuntimeError("incremental no-op unexpectedly fell back")
+    if incremental.candidate_sessions != 0:
+        raise RuntimeError("incremental no-op unexpectedly selected candidate sessions")
     if not status.healthy:
         raise RuntimeError("ontology status is unhealthy")
     if status.coverage_ratio < 0.99 or status.missing_sessions:
@@ -182,6 +184,7 @@ def _build_evidence(
             "elapsed_seconds": incremental_seconds,
             "mode": incremental.mode,
             "fallback_reason": incremental.fallback_reason,
+            "candidate_sessions": incremental.candidate_sessions,
         },
         "status": {
             "healthy": status.healthy,

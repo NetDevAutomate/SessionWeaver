@@ -4,245 +4,207 @@
 
 # Session Weaver
 
-**Cross-harness session memory for coding agents** — one queryable, provenance-carrying
-knowledge system built from the transcripts of six harnesses (Claude Code, Codex,
-Kiro CLI, OpenCode, pi, Grok), proven with benchmark data, not assertion.
+Session Weaver is a standalone distribution of cross-harness session capture, evidence-backed
+concept recall, wind-down writing, ontology diagnostics, and benchmark tooling. One `uv tool`
+install exposes the `session-*` tools plus the `session-weaver` CLI and agent skill.
 
-This repository is the **standalone distribution**: one `uv tool install` gives you the
-full session toolchain, the agent skill, and the installer that wires the skill into
-every harness. The session tools' source of truth lives in the
-[StudyLoop monorepo](https://github.com/NetDevAutomate/StudyLoop)
-(`packages/agent-session-tools`, consumed here as a pinned git dependency — never
-forked), part of the wider [StudyLoop](https://www.studyloop.dev/) system.
+The maintained session-tool implementation and database schema remain owned by the
+[StudyLoop monorepo](https://github.com/NetDevAutomate/StudyLoop) package
+`packages/agent-session-tools`; this repository consumes that source at a pinned commit rather
+than forking it. Phase B's StudyLoop retrofit has not landed in this distribution, so MCP
+registration, seed-snapshot ontology sanitization, and cross-machine concept replication are not
+claimed here.
 
 ## Install
 
 ```bash
-# Everything: session tools + skill installer, isolated, on PATH
 uv tool install --from git+https://github.com/NetDevAutomate/SessionWeaver session-weaver
-# …or from a local checkout
+# Local checkout
 uv tool install --from /path/to/session_weaver session-weaver
 ```
 
-This puts on your PATH: `session-weaver` (skill installer & doctor) plus the re-exported
-session tools `session-export`, `session-query`, `session-context`, `session-sync`,
-`session-repair`, `session-maint`.
-
-> Already have `agent-session-tools` installed as a uv tool (e.g. from a StudyLoop
-> source checkout)? The `session-*` executables collide by design — this package is the
-> standalone distribution of the same tools. Install with `--force` to let it take over,
-> or keep your workspace install and use only the skill installer from here.
+The install exposes `session-weaver`, `session-export`, `session-query`, `session-context`,
+`session-sync`, `session-repair`, and `session-maint`. If another `agent-session-tools` uv tool
+already owns the same `session-*` executable names, choose which distribution owns those names;
+`uv tool install --force` replaces the existing tool's executable links.
 
 ### Wire the skill into your harnesses
 
+The following block contains every leaf command from `session_weaver.cli:build_parser`:
+
 ```bash
-session-weaver install                  # all six harnesses
-session-weaver install --harness kiro,claude
-session-weaver install --copy             # copies only for non-hub readers
-session-weaver install --copy --force     # replace each named copy target explicitly
-session-weaver install --dry-run          # show what would happen
-session-weaver status                     # inspect current wiring
-session-weaver doctor                     # check the session store + ontology + tools
-session-weaver ontology rebuild           # full rebuild of the default store
-session-weaver ontology rebuild --incremental
-session-weaver ontology status            # strictly read-only health diagnostics
-session-weaver winddown --session ID --from winddown.json
-session-weaver concept accept CONCEPT_ID --reason "reviewed"
-session-weaver concept retire CONCEPT_ID --reason "obsolete"
-session-weaver concept bind LEGACY_ID --from binding.json --reason "exact evidence"
-session-weaver concept import-okf /path/to/okf --dry-run --report -
+session-weaver install [--harness all|NAMES] [--copy] [--force] [--dry-run]
+session-weaver uninstall [--harness all|NAMES] [--remove-hub] [--dry-run]
+session-weaver status [--harness all|NAMES]
+session-weaver doctor [--db PATH]
+session-weaver ontology rebuild [--incremental] [--db PATH]
+session-weaver ontology status [--db PATH]
+session-weaver winddown --session ID --from winddown.json [--project ID] [--db PATH]
+session-weaver concept accept CONCEPT_ID --reason REASON [--project ID] [--db PATH]
+session-weaver concept retire CONCEPT_ID --reason REASON [--project ID] [--db PATH]
+session-weaver concept bind LEGACY_ID --from binding.json --reason REASON [--project ID] [--db PATH]
+session-weaver concept import-okf /path/to/okf [--dry-run] [--report PATH|-] [--project ID] [--db PATH]
 session-weaver concept project --out DIR [--project ID] [--db PATH] [--json]
 session-weaver recall "<question>" [--k N] [--project ID] [--db PATH] [--json]
+session-weaver bench run --db PATH [--gold PATH] [--k 5] [--json] [--out DIR] [--live-ro]
 session-weaver bench audit-gold --db PATH
-session-weaver bench run --db PATH [--gold docs/data/gold.json] [--k 5] [--json] [--out DIR] [--live-ro]
 ```
 
-Concept writes target the same SQLite database as the session tools and return
-content-free structured JSON. Legacy OKF import is recursive and deterministic: every
-parseable frozen-writer record starts as `legacy-unbound`; canonicalizable legacy tag
-case is reported and normalized to the A3a lowercase form while immutable identity
-continues to hash the original bytes. The historical `machine-confirmed` label never
-becomes acceptance. Only one literal occurrence of the **full Markdown body** in
-scope-visible evidence creates a new proposed bound successor. Missing or hidden claimed
-sessions retain their source URI with no fabricated session/FK and remain unavailable
-until the real session becomes scope-visible and can be bound safely. Zero matches,
-ambiguity, no visible evidence, and oversized citation bodies (over the 2,000
-code-point exact-match limit) remain unbound. A claimed session's evidence body over
-the bounded reader's per-evidence size limit is never loaded for exact-match binding;
-that one record is classified `legacy-unbound`/`oversized_evidence` and the import
-continues — it does not abort the batch. A session mixing an oversized and a
-normal-sized body still binds against the normal-sized body when exactly one match
-exists there. Source traversal and report replacement are anchored to securely opened
-directory descriptors;
-if report delivery fails after commit, the CLI returns exit 1 with truthful committed
-write counters. `--dry-run` performs the same classification with zero writes, and
-repeated imports add no rows or events. The sanitized disposable-copy receipt, including
-all 2,033 imported records, is
-[`legacy-okf-import-baseline.json`](docs/data/legacy-okf-import-baseline.json).
+`install` writes the canonical skill to `~/.agents/skills/session-weaver/`. Codex, OpenCode, and
+pi read that hub directly. Claude, Kiro, and Grok receive a link from their native skill
+directory; `--copy` creates copies only for those non-hub readers. Existing named targets are
+non-destructive conflicts unless `--copy --force` explicitly replaces that one target.
+Installer-owned directories contain the exact marker payload
+`b'{"owner":"session-weaver","schema":1}\n'`; the shown `\n` is the trailing LF byte. Uninstall
+removes only a directory carrying that exact marker or a link resolving to the Session Weaver
+hub.
 
-`concept project --out DIR` rebuilds disposable, scope-authorized Markdown from
-authoritative concept state; it never writes database truth and never promotes trust.
-One output directory is owned by exactly one scope/project selector through a
-non-symlink `.session-weaver-projection.json` marker, and a
-`.session-weaver-projection-manifest.json` binds every generated filename to its concept
-ID and exact byte SHA-256. A previously-generated file is only ever deleted as stale
-when all five conditions hold: it is listed in the prior valid manifest, its name matches
-the generated-filename grammar, its embedded ownership marker matches the manifest's
-concept ID, its current byte SHA-256 still equals the manifest's, and it is a regular,
-non-symlink file opened through the held output-directory descriptor. Any other
-unowned or externally modified file is preserved and reported as a conflict, never
-deleted. Two invocations racing on the same `--out` fail closed: whichever one observes
-the other's marker/manifest mid-publication reports a conflict rather than corrupting
-either run; there is no lock. Every rendered file carries honest frontmatter —
-`model_authorship: model-proposed` always, and `citation_binding: machine-confirmed`
-only for bound roots (`absent` for legacy-unbound roots) — so a reader can tell
-model-proposed interpretation from machine-confirmed citation binding at a glance.
+## Recall and trust
 
-`recall "<question>" [--k N] [--project ID] [--json]` answers with **concepts first, then
-sessions**: a pure AND→OR planner (tokenize, drop stop words/short tokens, quote every
-term, try the AND-joined query before falling back to OR) searches concepts through the
-same scope-authorization seam `concept project` uses, then searches raw session text
-through `messages_fts`, deduplicated against any session a returned concept already
-cites. A legacy-unbound concept is returned labelled `legacy-unbound (session-level
-provenance)` with no citations, never silently upgraded to a machine-confirmed one. The
-report shape is frozen and schema-checked
-([`recall-contract.json`](docs/data/recall-contract.json)). Recall ships with **no
-embeddings** and never consults the tier-1 ontology tables — it is pure keyword search
-over the same authoritative stores `concept project` reads.
+`session-weaver recall` performs concept-first keyword retrieval, then appends deduplicated raw
+session hits. Its planner tokenizes terms, drops the pinned stop/short-word set, quotes every term,
+tries an AND query, and uses OR only when needed to fill `k`. Concepts and sessions pass through
+the maintained scope, project, tombstone, and lifecycle policy. The report shape is frozen in
+[`docs/data/recall-contract.json`](docs/data/recall-contract.json).
 
-`bench audit-gold --db PATH` verifies the frozen 25-question K11/P8/R6 corpus before
-scoring. `bench run` evaluates at `k=5` and emits all-25 plus visibility-eligible-subset
-recall@5/MRR@5 with Wilson 95% intervals, the same-visibility raw-text positive control,
-a clearly non-gating unrestricted diagnostic, concept-candidate coverage, and a separate
-corpus-verified directional paraphrase table. The pre-registered verdict is PASS at
-overall recall ≥0.64 with floors K≥0.81/P≥0.15/R≥0.57, INVESTIGATE at 0.54–0.64 when
-all floors pass, and FAIL below 0.54 or on any floor breach; these bands are not tuned
-after measurement. A production exporter older than fix `7f9a19ec` labels the entire run
-`pre-fix/provisional` and cannot close the stage. Ontology rebuild is parity preparation
-only and never becomes a recall input. Live evaluation must use SQLite Online Backup;
-`--live-ro` only permits an explicit read-only diagnostic of the live path.
+Recall ships with no embeddings and never reads tier-1 ontology tables. Projection and recall use
+the same `authorization.authorized_concepts` seam, so both apply one concept-visibility policy.
+Returned legacy records remain labelled `legacy-unbound (session-level provenance)` with no
+fabricated citations.
 
-The skill is installed **once** into the shared hub `~/.agents/skills/session-weaver/`.
-Codex, OpenCode and pi read that directory natively; Claude, Kiro and Grok get a
-symlink from their own skills directory into the hub — two links in a chain instead of
-six drifting copies. `--copy` duplicates into only the non-hub-reading harnesses if your
-setup dislikes links. An existing named target is a non-destructive conflict unless
-`--force` is explicit; force replaces that target only. Installer-created copies carry
-`.session-weaver-owned.json` containing `{"owner":"session-weaver","schema":1}`.
-Uninstall removes a copied directory only when that exact marker proves ownership, and
-removes a symlink only when it resolves to the SessionWeaver hub.
+Projection frontmatter separates two facts:
 
-Ontology commands use `~/.config/studyloop/sessions.db` unless `--db PATH` is explicit.
-Rebuild opens read/write and emits aggregate JSON only; status opens a SQLite read-only
-URI, never creates the database, and exits nonzero for any unhealthy dimension.
+- `model_authorship: model-proposed` — a model authored the interpretation; this is not human
+  approval.
+- `citation_binding: machine-confirmed` — exact quoted text is bound to visible evidence. It is
+  `absent` for legacy-unbound roots.
 
-## What the system does
+## Code-enforced wind-down
 
-1. **Capture** — `session-export` imports supported harness transcripts into the
-   shared store, produces zero empty rows, and preserves subagent sidechains that
-   were historically lost. Phase A does not install an automatic ontology rebuild.
-2. **Store (one SQLite file)** — `~/.config/studyloop/sessions.db`, WAL mode: sessions +
-   messages + FTS + ontology tables. Multi-machine sync over ssh is idempotent and
-   cannot resurrect deleted rows (verified by probe).
-3. **Structure (tier-1 ontology, $0)** — deterministic entity resolution builds a real
-   T-Box/A-Box. The post-pin Online Backup baseline contains 7 classes, 6 typed
-   properties, 13,336 individuals and 28,766 relations with zero domain/range
-   violations; its cold full rebuild completed in 3.28 s. See the sanitized
-   [`ontology-tier1-baseline.json`](docs/data/ontology-tier1-baseline.json).
-4. **Distil (tier-2 wind-down → OKF)** — a capable model reads each session's FULL text
-   and authors knowledge concepts (Decision/Finding/Problem/Preference/Procedure) as
-   OKF v0.2 Markdown with provenance frontmatter: 348 sessions → 2,033 concepts,
-   $17.23, zero failures after the output-budget fix.
-5. **Serve** — fusion retrieval (OKF concepts + FTS AND→OR planner + embeddings, RRF)
-   answers agent questions with session provenance. [`SKILL.md`](SKILL.md) tells agents
-   how to read it well and write wind-down knowledge back.
+Use `session-weaver winddown --session ID --from winddown.json`; never write authoritative OKF
+Markdown by hand. The input contains only `concepts` (0–8). Each concept has exactly `type`,
+`title`, `description`, `tags`, `confidence`, and `quotes`; every concept has 1–8 verbatim quotes.
+A quote may be text-only or include the complete `evidence_id` / `start` / `end` locator triple.
+The writer validates the complete batch, resolves quotes against scope-visible evidence, assigns
+identities, and commits authoritative state transactionally. Field-level errors produce no
+partial concept batch.
 
-### Ontology safety and sync boundary
+`concept project --out DIR` rebuilds disposable Markdown from authoritative concept state. Its
+scope/project marker and manifest bind generated filenames to concept IDs and exact byte hashes.
+Managed stale files are removed only when the prior manifest, generated-name grammar, embedded
+ownership marker, current hash, and regular-file check all agree. Unowned, changed, or symlinked
+files are preserved as conflicts.
 
-The maintained opt-in acceptance test opens an explicit source read-only, records only
-schema/count/freshness sentinels, creates a unique SQLite Online Backup under `/tmp`,
-and runs rebuilds only against that disposable copy. The retained source content receipt
-hashes that transaction-aligned Online Backup before any ontology mutation; it never
-hashes the bare main file of a WAL database and never uses `cp`. Source sentinels are
-compared again before the backup and sidecars are deleted. Retained evidence contains
-counts, hashes, timings, and health verdicts only.
+Legacy `concept import-okf` remains a conservative migration path. Imported roots begin as
+`legacy-unbound`; exact evidence can create a proposed bound successor, but historical
+`machine-confirmed` wording never becomes acceptance. Dry-run follows the same classification
+without writes, and repeated import is idempotent.
 
-Ontology tables are absent from the pinned normal and global **delta-sync** allow lists.
-The pinned first-time `_seed_remote_db` path still transfers an entire SQLite Online
-Backup, so it can carry existing ontology tables. Phase B B2 owns seed sanitization and
-destination-local rebuild; until then, do not interpret the delta exclusion as a claim
-that ontology rows can never travel by any sync path.
+## Doctor classifications
 
-## The measured result
+`session-weaver doctor` opens the selected store read-only and runs functional positive controls:
+store counts, ontology freshness/health, exact concept-sidecar schema plus full-tuple FTS digest,
+and recall of a term read from indexed content with at least one returned result. It also reads
+MCP registration from `~/.claude.json`, `~/.kiro/settings/mcp.json`, and
+`~/.codex/config.toml`, and checks the Grok skill path.
 
-25 corpus-verified benchmark questions, session-level recall@5 / MRR@5 (higher is
-better; scoring definitions in [`docs/GLOSSARY.md`](docs/GLOSSARY.md)):
+| Classification | Findings | Exit effect |
+| --- | --- | --- |
+| Fatal | missing/unreadable session store; unhealthy ontology; missing/invalid concept sidecar; inconsistent FTS digest; recall positive-control failure; missing required `session-*` executables | exit 1 |
+| Report-only | Claude/Kiro/Codex session-db MCP registration missing or unreadable; Grok skill absent; no searchable term in an otherwise empty store | no exit change |
 
-| Retrieval candidate | recall@5 / MRR@5 | Keyword | Paraphrase | Relational |
-|---|---|---|---|---|
-| Raw-text FTS (tuned) | 0.48 / 0.38 | 0.73 | 0.12 | 0.50 |
-| Raw-text embeddings | 0.28 / 0.20 | 0.45 | 0.25 | 0.00 |
-| Raw-text hybrid | 0.48 / 0.36 | 0.82 | 0.12 | 0.33 |
-| **OKF wind-down store alone** | **0.64 / 0.50** | 0.91 | 0.25 | 0.67 |
-| **OKF + hybrid fusion** | **0.68 / 0.50** | **1.00** | 0.25 | **0.67** |
+MCP checks are visibility diagnostics, not proof that a remote server is running. The standalone
+installer does not register MCP servers.
 
-The distilled knowledge layer adds **+0.20 recall over the best raw-text engine**.
-Full method, per-question rows, threats to validity, and the measurement timeline:
-[`docs/RESULTS-final.md`](docs/RESULTS-final.md) — read the reading-order note at the
-top: the addenda **supersede** the interim recommendation in the base document
-(extraction fidelity, not architecture, was the variable).
+## Ontology boundary
 
-**Interactive architecture diagrams** (archify-delivered, open in a browser):
-[`docs/architecture/final-architecture.html`](docs/architecture/final-architecture.html)
-· [`docs/architecture/knowledge-pipeline.html`](docs/architecture/knowledge-pipeline.html)
-— regenerable/diffable specs sit beside each HTML.
+`ontology rebuild` materializes deterministic tier-1 derived tables; `ontology status` is
+strictly read-only and reports schema, version, coverage, freshness, source-count, orphan,
+foreign-key, domain/range, and logical-hash dimensions. The live acceptance harness mutates only
+a SQLite Online Backup and compares source sentinels before deleting the backup.
 
-## Repository layout
+Ontology tables are absent from pinned normal/global delta-sync allow lists. The pinned
+first-time `_seed_remote_db` path still transfers a whole SQLite Online Backup and can therefore
+carry existing derived rows. Phase B B2 owns seed sanitization and destination-local rebuild;
+until it lands, "excluded from delta sync" must not be paraphrased as "never travels by any sync
+path."
 
-```
-src/session_weaver/   the installable package: skill installer, doctor CLI,
-                      packaged SKILL.md (+ re-exported session-* entry points)
-tests/                unit + integration tests for the package (pytest)
-SKILL.md              the agent skill (canonical copy; shipped in the package)
-code/                 frozen PoC evidence: the pipeline scripts that produced the
-                      benchmark results (runnable, documented in-file, not maintained
-                      as package code)
-docs/                 RESULTS-final.md (all measurements) · GLOSSARY.md · findings
-docs/architecture/    archify specs + delivered interactive HTML diagrams
-docs/data/            gold.json answer key + raw per-question result rows
-images/               logo/icon assets used by this README and GitHub
-```
+The fresh A5 evidence-v3 baseline is
+[`docs/data/ontology-tier1-baseline.json`](docs/data/ontology-tier1-baseline.json). It includes
+`incremental_rebuild.candidate_sessions == 0` so the retained no-op claim is directly evidenced.
+Compared with evidence v2, the fresh source grew from 5,678 to 5,813 sessions (+135) and 133,559
+to 139,633 messages (+6,074). Derived counts changed from 13,336 to 13,528 individuals (+192),
+28,766 to 29,475 relations (+709), and 22,800 to 23,241 structural rows (+441); 7 classes and 6
+properties were unchanged. These are corpus-growth deltas, not a change to extraction version
+`tier1-v2-canonical-messages`.
+
+## A6 measured posture
+
+The current corpus posture is **post-fix/eligible** (`fb606468` exporter). At k=5, all 25 frozen
+questions were visibility-eligible, so all-25 and visible-subset results are identical:
+
+| Category | Recall@5 | Wilson 95% CI | MRR@5 | Wilson 95% CI |
+| --- | ---: | --- | ---: | --- |
+| Overall | **0.600000** | **[0.407391, 0.765969]** | **0.463333** | **[0.286163, 0.650272]** |
+| K | 0.818182 | [0.523014, 0.948633] | 0.621212 | [0.341058, 0.838617] |
+| P | 0.250000 | [0.071478, 0.590730] | 0.156250 | [0.032809, 0.502727] |
+| R | 0.666667 | [0.299988, 0.903231] | 0.583333 | [0.241074, 0.860536] |
+
+The measured verdict is **INVESTIGATE**. Every fixed category floor passed, but overall recall is
+below the 0.64 target. Current **25/25** visibility is **not directly comparable** to the frozen
+PoC's 22 IDs. The same-visibility raw-text positive control was **PASS** at 0.480000 recall /
+0.312000 MRR. The separate corpus-verified directional P set scored **0/40** (0.000000 recall /
+0.000000 MRR) and is a **non-gating** directional warning.
+Tier-1 ontology rebuild was parity preparation only and was never a recall input.
+
+Historical PoC values are retained only as history: concept-only 0.64/0.50 and unshipped fusion
+0.68/0.50. They are not the current gate result and do not describe a shipped embedding or fusion
+path. The approved aggregate A6 evidence is
+[`docs/data/bench-baseline-phase-a.json`](docs/data/bench-baseline-phase-a.json).
+
+## Freshness and scope limits
+
+Session export freshness comes from user-managed `session-export` hooks or sweep configuration;
+this installer provisions neither automation nor a fixed schedule. Check the local environment
+instead of assuming recent sessions were exported.
+
+Cross-machine sync transfers retained database content through the upstream session tools. It
+does not guarantee propagated forgetting: native transcripts, peers, backups, and exported notes
+can retain or restore data.
 
 ## Development
 
 ```bash
-uv sync
-uv run pytest -W error                # full suite; package coverage must stay >=90%
+uv sync --frozen
+uv run pytest -W error
 uv run ruff check .
 uv run ruff format --check .
 uv run pyright
 ```
 
-The real-corpus ontology acceptance is opt-in and operates only on an Online Backup:
+The current suite contains **491 tests**: 487 selected by the default non-live run and 4 opt-in
+live tests. Package coverage is required to remain at least 90%. The ontology live test requires
+an explicit source and writes retained evidence only when an explicit target is supplied:
 
 ```bash
 SESSION_WEAVER_ONTOLOGY_SOURCE=/absolute/path/to/sessions.db \
+SESSION_WEAVER_ONTOLOGY_EVIDENCE=docs/data/ontology-tier1-baseline.json \
   uv run pytest tests/test_ontology_live.py::test_real_corpus_online_backup_acceptance \
-  -m live -W error --no-cov
+  -m live --no-cov -W error
 ```
 
-## Lineage
+Testable public claims are mapped to maintained code/tests/evidence in
+[`docs/claims-audit.md`](docs/claims-audit.md).
 
-Built 2026-09-06 during the Session Weaver Phase 0 close-out and storage PoC; this repo
-is the Phase 1 standalone packaging of that work. Production source of truth:
-[StudyLoop](https://github.com/NetDevAutomate/StudyLoop) · site:
-[studyloop.dev](https://www.studyloop.dev/). Costs are in the LiteLLM ledger (runs
-`…-wpp3-ontology`, `…-t2-winddown`, `…-phase0-gate`).
+The current target-state diagrams are [`phase2-architecture`](docs/architecture/phase2-architecture.html),
+[`phase2-dataflow`](docs/architecture/phase2-dataflow.html), and
+[`phase2-winddown-sequence`](docs/architecture/phase2-winddown-sequence.html). The original PoC
+artifacts and their unchanged provenance sidecars are retained under
+[`docs/architecture/poc/`](docs/architecture/poc/README.md) and are superseded by `phase2-*`.
 
-## Contributing, conduct, security, license
+## License and project files
 
-Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). This project follows
-the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md); report security concerns privately
-per [SECURITY.md](SECURITY.md). Changes are recorded in [CHANGELOG.md](CHANGELOG.md);
-third-party attributions in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-MIT licensed — see [LICENSE](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+[SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md), and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Session Weaver is MIT licensed; see
+[LICENSE](LICENSE).

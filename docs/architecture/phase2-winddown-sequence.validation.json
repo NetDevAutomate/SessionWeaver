@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "validate",
+  "type": "sequence",
+  "checksPassed": 9,
+  "checkCount": 9,
+  "composition": {"profile": "showcase", "status": "pass", "errors": 0, "warnings": 0}
+}

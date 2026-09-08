@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -1109,3 +1110,20 @@ def test_status_treats_blob_timestamps_as_unhealthy_diagnostics(
         assert status.completed_at is None
         assert status.completed_at_valid is False
         assert "completed-at is missing or malformed" in status.diagnostics
+
+
+def test_status_orchestrator_delegates_to_private_dimension_checks() -> None:
+    source = inspect.getsource(ontology.ontology_status)
+
+    assert len(source.splitlines()) <= 70
+    for helper in (
+        "_check_ontology_schema",
+        "_read_ontology_source",
+        "_check_ontology_build_state",
+        "_check_ontology_version",
+        "_check_ontology_coverage",
+        "_check_ontology_integrity",
+        "_check_ontology_freshness",
+        "_check_ontology_hash",
+    ):
+        assert f"{helper}(" in source

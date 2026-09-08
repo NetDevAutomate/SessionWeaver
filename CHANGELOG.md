@@ -9,6 +9,16 @@ may change before `1.0.0`.
 
 ### Added
 
+- Added A5 functional doctor controls: real known-term recall, exact concept-sidecar and
+  full-tuple FTS digest verification, per-harness session-db MCP registration diagnostics,
+  and Grok skill visibility. Session store, ontology, concept-sidecar, recall, and required
+  executable failures are fatal; MCP registration and Grok skill absence are report-only.
+- Added `docs/claims-audit.md`, mapping every testable README/SKILL claim to maintained code,
+  tests, or retained evidence. Rewrote both byte-identical skill copies and README around the
+  shipped concept-first/write-through-CLI behavior and the approved A6 INVESTIGATE values.
+- Promoted the ontology Online Backup receipt to evidence v3 with the explicit
+  `incremental_rebuild.candidate_sessions == 0` no-op proof.
+
 - Added `session-weaver bench audit-gold --db PATH` and `session-weaver bench run
   --db PATH [--gold PATH] [--k 5] [--json] [--out DIR]`: a pre-registered,
   corpus-posture-gated recall benchmark over the frozen 25-question K11/P8/R6 set.
@@ -73,6 +83,11 @@ may change before `1.0.0`.
 
 ### Fixed
 
+- Ordered concept FTS consistency receipts by the complete canonical tuple rather than the
+  non-unique concept ID alone, making corruption digests stable across duplicate-row insertion
+  order.
+- Split the ontology health orchestrator into private schema, source, build-state, version,
+  coverage, integrity, freshness, and hash checks without changing the public status contract.
 - Degraded oversized legacy OKF evidence bodies per record instead of aborting the
   whole import transaction: a claimed session's evidence body over the bounded
   reader's `MAX_BODY_CHARS` limit is now excluded from exact-match search and that

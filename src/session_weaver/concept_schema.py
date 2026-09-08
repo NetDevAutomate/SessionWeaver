@@ -533,22 +533,21 @@ def _digest(rows: list[tuple[object, ...]]) -> str:
     return hashlib.sha256(_canonical_rows(rows).encode("utf-8")).hexdigest()
 
 
-def _fts_consistency(conn: sqlite3.Connection) -> _FtsConsistency:
-    """Return a stable, rowid-independent receipt comparing roots with derived FTS."""
-    _ensure_schema(conn)
+def _inspect_fts_consistency(conn: sqlite3.Connection) -> _FtsConsistency:
+    """Return a read-only FTS receipt after the caller verifies the sidecar schema."""
     expected = [
         tuple(row)
         for row in conn.execute(
             """SELECT id,title,statement,
                COALESCE((SELECT group_concat(value,' ') FROM json_each(canonical_tags)),''),
-               kind FROM context_concepts ORDER BY id"""
+               kind FROM context_concepts ORDER BY 1,2,3,4,5"""
         )
     ]
     actual = [
         tuple(row)
         for row in conn.execute(
             """SELECT concept_id,title,statement,tags,kind
-               FROM context_concept_fts ORDER BY concept_id"""
+               FROM context_concept_fts ORDER BY 1,2,3,4,5"""
         )
     ]
     expected_digest = _digest(expected)
@@ -560,6 +559,12 @@ def _fts_consistency(conn: sqlite3.Connection) -> _FtsConsistency:
         digest=expected_digest,
         actual_digest=actual_digest,
     )
+
+
+def _fts_consistency(conn: sqlite3.Connection) -> _FtsConsistency:
+    """Return a stable, rowid-independent receipt, installing the sidecar if needed."""
+    _ensure_schema(conn)
+    return _inspect_fts_consistency(conn)
 
 
 def _rebuild_fts(conn: sqlite3.Connection) -> _FtsConsistency:

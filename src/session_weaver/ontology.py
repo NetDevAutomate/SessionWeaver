@@ -1225,16 +1225,81 @@ def _required_index_table(index: str) -> str:
     return "ontology_relation"
 
 
-def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
-    """Inspect ontology health without creating, repairing, or mutating anything."""
+@dataclass(frozen=True, slots=True)
+class _OntologySchemaCheck:
+    present_tables: frozenset[str]
+    missing_tables: tuple[str, ...]
+    missing_indexes: tuple[str, ...]
+    schema_errors: tuple[str, ...]
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologySource:
+    rows: tuple[tuple[str, object], ...]
+    ids: frozenset[str]
+    sessions: int
+    messages: int
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyBuildStateCheck:
+    extraction_version: str | None
+    recorded_hash: str | None
+    completed_at: str | None
+    recorded_source_sessions: int | None
+    recorded_source_messages: int | None
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyVersionCheck:
+    matches: bool
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyCoverageCheck:
+    covered_sessions: int
+    missing_sessions: int
+    coverage_ratio: float
+    orphan_session_individuals: int
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyIntegrityCheck:
+    orphan_structural_rows: int
+    foreign_key_violations: int
+    domain_range_violations: int
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyFreshnessCheck:
+    completed_at_valid: bool
+    newest_session_updated_at: str | None
+    fresh: bool
+    source_counts_match: bool
+    malformed_timestamps: tuple[str, ...]
+    diagnostics: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OntologyHashCheck:
+    recomputed_hash: str | None
+    matches: bool
+    diagnostics: tuple[str, ...]
+
+
+def _check_ontology_schema(conn: sqlite3.Connection) -> _OntologySchemaCheck:
     diagnostics: list[str] = []
     schema_errors: list[str] = []
-    present_tables = {
+    present_tables = frozenset(
         row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
+    )
     missing_tables = tuple(sorted(ONTOLOGY_TABLES - present_tables))
-    for table in missing_tables:
-        diagnostics.append(f"missing ontology table: {table}")
+    diagnostics.extend(f"missing ontology table: {table}" for table in missing_tables)
 
     for table in sorted(ONTOLOGY_TABLES & present_tables):
         actual_columns = tuple(row[1] for row in conn.execute(f'PRAGMA table_info("{table}")'))
@@ -1249,8 +1314,7 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
         )
     }
     missing_indexes = tuple(sorted(set(ONTOLOGY_INDEXES) - set(index_rows)))
-    for index in missing_indexes:
-        diagnostics.append(f"missing ontology index: {index}")
+    diagnostics.extend(f"missing ontology index: {index}" for index in missing_indexes)
     for index, expected_columns in ONTOLOGY_INDEXES.items():
         if index not in index_rows:
             continue
@@ -1266,11 +1330,7 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
         metadata = (
             None
             if index_metadata is None
-            else (
-                bool(index_metadata[2]),
-                index_metadata[3],
-                bool(index_metadata[4]),
-            )
+            else (bool(index_metadata[2]), index_metadata[3], bool(index_metadata[4]))
         )
         key_definition = tuple(
             (row[2], bool(row[3]), row[4])
@@ -1288,28 +1348,43 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
                 f"{index} definition {actual_definition!r} != {expected_definition!r}"
             )
     diagnostics.extend(f"schema error: {error}" for error in schema_errors)
+    return _OntologySchemaCheck(
+        present_tables=present_tables,
+        missing_tables=missing_tables,
+        missing_indexes=missing_indexes,
+        schema_errors=tuple(schema_errors),
+        diagnostics=tuple(diagnostics),
+    )
 
-    source_rows = conn.execute("SELECT id, updated_at FROM sessions ORDER BY id").fetchall()
-    source_ids = {row[0] for row in source_rows}
-    source_sessions = len(source_rows)
-    source_messages = int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
 
+def _read_ontology_source(conn: sqlite3.Connection) -> _OntologySource:
+    rows = tuple(conn.execute("SELECT id, updated_at FROM sessions ORDER BY id").fetchall())
+    return _OntologySource(
+        rows=rows,
+        ids=frozenset(row[0] for row in rows),
+        sessions=len(rows),
+        messages=int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]),
+    )
+
+
+def _check_ontology_build_state(
+    conn: sqlite3.Connection,
+    schema: _OntologySchemaCheck,
+) -> _OntologyBuildStateCheck:
     extraction_version: str | None = None
     recorded_hash: str | None = None
     completed_at: str | None = None
     recorded_source_sessions: int | None = None
     recorded_source_messages: int | None = None
-    if "ontology_build_state" in present_tables and not any(
-        error.startswith("ontology_build_state columns") for error in schema_errors
+    diagnostics: list[str] = []
+    if "ontology_build_state" in schema.present_tables and not any(
+        error.startswith("ontology_build_state columns") for error in schema.schema_errors
     ):
         try:
             state_rows = conn.execute(
-                """
-                SELECT extraction_version, logical_hash, completed_at,
-                       source_session_count, source_message_count
-                FROM ontology_build_state
-                WHERE singleton = 1
-                """
+                """SELECT extraction_version, logical_hash, completed_at,
+                          source_session_count, source_message_count
+                   FROM ontology_build_state WHERE singleton = 1"""
             ).fetchall()
         except sqlite3.DatabaseError:
             state_rows = []
@@ -1324,9 +1399,23 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
             completed_at = _timestamp_text(raw_completed_at)
         else:
             diagnostics.append("ontology build state is missing or not singular")
+    return _OntologyBuildStateCheck(
+        extraction_version=extraction_version,
+        recorded_hash=recorded_hash,
+        completed_at=completed_at,
+        recorded_source_sessions=recorded_source_sessions,
+        recorded_source_messages=recorded_source_messages,
+        diagnostics=tuple(diagnostics),
+    )
 
+
+def _check_ontology_version(
+    conn: sqlite3.Connection,
+    schema: _OntologySchemaCheck,
+    state: _OntologyBuildStateCheck,
+) -> _OntologyVersionCheck:
     structural_versions: set[str] = set()
-    if "ontology_structural" in present_tables:
+    if "ontology_structural" in schema.present_tables:
         try:
             structural_versions = {
                 row[0]
@@ -1336,53 +1425,71 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
             }
         except sqlite3.DatabaseError:
             structural_versions = set()
-    extraction_version_matches = extraction_version == EXTRACTION_VERSION and (
+    matches = state.extraction_version == EXTRACTION_VERSION and (
         not structural_versions or structural_versions == {EXTRACTION_VERSION}
     )
-    if not extraction_version_matches:
-        diagnostics.append(
+    diagnostics = ()
+    if not matches:
+        diagnostics = (
             "extraction version mismatch: "
-            f"state={extraction_version!r}, structural={sorted(structural_versions)!r}, "
-            f"expected={EXTRACTION_VERSION!r}"
+            f"state={state.extraction_version!r}, structural={sorted(structural_versions)!r}, "
+            f"expected={EXTRACTION_VERSION!r}",
         )
+    return _OntologyVersionCheck(matches=matches, diagnostics=diagnostics)
 
+
+def _check_ontology_coverage(
+    conn: sqlite3.Connection,
+    schema: _OntologySchemaCheck,
+    source: _OntologySource,
+) -> _OntologyCoverageCheck:
     ontology_session_ids: set[str] = set()
-    if "ontology_individual" in present_tables:
+    if "ontology_individual" in schema.present_tables:
         try:
             ontology_session_ids = {
                 individual_id.removeprefix("session:")
                 for (individual_id,) in conn.execute(
-                    """
-                    SELECT id FROM ontology_individual
-                    WHERE id LIKE 'session:%'
-                      AND class IN ('Session', 'SubagentSession')
-                    """
+                    """SELECT id FROM ontology_individual
+                       WHERE id LIKE 'session:%'
+                         AND class IN ('Session', 'SubagentSession')"""
                 )
             }
         except sqlite3.DatabaseError:
             ontology_session_ids = set()
-    covered_sessions = len(source_ids & ontology_session_ids)
-    missing_sessions = len(source_ids - ontology_session_ids)
-    coverage_ratio = covered_sessions / source_sessions if source_sessions else 1.0
+    covered_sessions = len(source.ids & ontology_session_ids)
+    missing_sessions = len(source.ids - ontology_session_ids)
+    coverage_ratio = covered_sessions / source.sessions if source.sessions else 1.0
+    orphan_session_individuals = len(ontology_session_ids - source.ids)
+    diagnostics: list[str] = []
     if coverage_ratio < 0.99:
         diagnostics.append(f"session coverage {coverage_ratio:.2%} is below 99.00%")
-    orphan_session_individuals = len(ontology_session_ids - source_ids)
     if orphan_session_individuals:
         diagnostics.append(
             f"ontology session individuals absent from source: {orphan_session_individuals}"
         )
+    return _OntologyCoverageCheck(
+        covered_sessions=covered_sessions,
+        missing_sessions=missing_sessions,
+        coverage_ratio=coverage_ratio,
+        orphan_session_individuals=orphan_session_individuals,
+        diagnostics=tuple(diagnostics),
+    )
 
+
+def _check_ontology_integrity(
+    conn: sqlite3.Connection,
+    schema: _OntologySchemaCheck,
+) -> _OntologyIntegrityCheck:
+    diagnostics: list[str] = []
     orphan_structural_rows = 0
-    if "ontology_structural" in present_tables:
+    if "ontology_structural" in schema.present_tables:
         try:
             orphan_structural_rows = int(
                 conn.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM ontology_structural AS structural
-                    LEFT JOIN sessions AS source ON source.id = structural.session_id
-                    WHERE source.id IS NULL
-                    """
+                    """SELECT COUNT(*)
+                       FROM ontology_structural AS structural
+                       LEFT JOIN sessions AS source ON source.id = structural.session_id
+                       WHERE source.id IS NULL"""
                 ).fetchone()[0]
             )
         except sqlite3.DatabaseError:
@@ -1404,24 +1511,37 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
         "ontology_individual",
         "ontology_relation",
     }
-    if domain_tables <= present_tables:
+    if domain_tables <= schema.present_tables:
         try:
             domain_range_violations = _domain_range_violations(conn, suffix="")
         except sqlite3.DatabaseError:
             domain_range_violations = 1
     if domain_range_violations:
         diagnostics.append(f"domain/range violations: {domain_range_violations}")
+    return _OntologyIntegrityCheck(
+        orphan_structural_rows=orphan_structural_rows,
+        foreign_key_violations=foreign_key_violations,
+        domain_range_violations=domain_range_violations,
+        diagnostics=tuple(diagnostics),
+    )
 
+
+def _check_ontology_freshness(
+    source: _OntologySource,
+    state: _OntologyBuildStateCheck,
+) -> _OntologyFreshnessCheck:
+    diagnostics: list[str] = []
     malformed_timestamps: list[str] = []
     parsed_timestamps: list[tuple[datetime, str, str]] = []
-    for session_id, updated_at in source_rows:
+    for session_id, updated_at in source.rows:
         if updated_at is None:
             continue
-        parsed = _parse_timestamp(updated_at)
-        if parsed is None:
+        updated_at_text = _timestamp_text(updated_at)
+        parsed = _parse_timestamp(updated_at_text)
+        if parsed is None or updated_at_text is None:
             malformed_timestamps.append(session_id)
         else:
-            parsed_timestamps.append((parsed, updated_at, session_id))
+            parsed_timestamps.append((parsed, updated_at_text, session_id))
     malformed = tuple(sorted(malformed_timestamps))
     if malformed:
         diagnostics.append("malformed non-null session updated_at values: " + ", ".join(malformed))
@@ -1430,18 +1550,19 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
     if parsed_timestamps:
         newest_parsed, newest_session_updated_at, _session_id = max(parsed_timestamps)
 
-    completed_parsed = _parse_timestamp(completed_at)
+    completed_parsed = _parse_timestamp(state.completed_at)
     completed_at_valid = completed_parsed is not None
     if not completed_at_valid:
         diagnostics.append("completed-at is missing or malformed")
     source_counts_match = (
-        recorded_source_sessions == source_sessions and recorded_source_messages == source_messages
+        state.recorded_source_sessions == source.sessions
+        and state.recorded_source_messages == source.messages
     )
     if not source_counts_match:
         diagnostics.append(
             "source counts changed: "
-            f"sessions={recorded_source_sessions!r}->{source_sessions}, "
-            f"messages={recorded_source_messages!r}->{source_messages}"
+            f"sessions={state.recorded_source_sessions!r}->{source.sessions}, "
+            f"messages={state.recorded_source_messages!r}->{source.messages}"
         )
     source_not_newer = completed_parsed is not None and (
         newest_parsed is None or newest_parsed <= completed_parsed
@@ -1449,53 +1570,94 @@ def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
     if completed_parsed is not None and not source_not_newer:
         diagnostics.append(
             "ontology is stale: newest source updated_at "
-            f"{newest_session_updated_at!r} is newer than completed-at {completed_at!r}"
+            f"{newest_session_updated_at!r} is newer than completed-at {state.completed_at!r}"
         )
-    fresh = completed_at_valid and not malformed and source_not_newer and source_counts_match
+    return _OntologyFreshnessCheck(
+        completed_at_valid=completed_at_valid,
+        newest_session_updated_at=newest_session_updated_at,
+        fresh=completed_at_valid and not malformed and source_not_newer and source_counts_match,
+        source_counts_match=source_counts_match,
+        malformed_timestamps=malformed,
+        diagnostics=tuple(diagnostics),
+    )
 
+
+def _check_ontology_hash(
+    conn: sqlite3.Connection,
+    schema: _OntologySchemaCheck,
+    state: _OntologyBuildStateCheck,
+) -> _OntologyHashCheck:
     recomputed_hash: str | None = None
     graph_tables = {table for _, table, _, _ in _GRAPH_TABLE_ORDER}
-    if graph_tables <= present_tables:
+    if graph_tables <= schema.present_tables:
         try:
             recomputed_hash = ontology_logical_hash(conn)
         except (OntologyError, sqlite3.DatabaseError):
             recomputed_hash = None
-    hash_matches = (
-        recorded_hash is not None
+    matches = (
+        state.recorded_hash is not None
         and recomputed_hash is not None
-        and recorded_hash == recomputed_hash
+        and state.recorded_hash == recomputed_hash
     )
-    if not hash_matches:
-        diagnostics.append(
-            f"logical hash mismatch: recorded={recorded_hash!r}, recomputed={recomputed_hash!r}"
+    diagnostics = ()
+    if not matches:
+        diagnostics = (
+            f"logical hash mismatch: recorded={state.recorded_hash!r}, "
+            f"recomputed={recomputed_hash!r}",
         )
+    return _OntologyHashCheck(
+        recomputed_hash=recomputed_hash,
+        matches=matches,
+        diagnostics=diagnostics,
+    )
+
+
+def ontology_status(conn: sqlite3.Connection) -> OntologyStatus:
+    """Inspect ontology health without creating, repairing, or mutating anything."""
+    schema = _check_ontology_schema(conn)
+    source = _read_ontology_source(conn)
+    state = _check_ontology_build_state(conn, schema)
+    version = _check_ontology_version(conn, schema, state)
+    coverage = _check_ontology_coverage(conn, schema, source)
+    integrity = _check_ontology_integrity(conn, schema)
+    freshness = _check_ontology_freshness(source, state)
+    hash_check = _check_ontology_hash(conn, schema, state)
+    diagnostics = (
+        *schema.diagnostics,
+        *state.diagnostics,
+        *version.diagnostics,
+        *coverage.diagnostics,
+        *integrity.diagnostics,
+        *freshness.diagnostics,
+        *hash_check.diagnostics,
+    )
 
     return OntologyStatus(
         healthy=not diagnostics,
-        extraction_version=extraction_version,
-        extraction_version_matches=extraction_version_matches,
-        recorded_logical_hash=recorded_hash,
-        recomputed_logical_hash=recomputed_hash,
-        hash_matches=hash_matches,
-        completed_at=completed_at,
-        completed_at_valid=completed_at_valid,
-        newest_session_updated_at=newest_session_updated_at,
-        fresh=fresh,
-        source_sessions=source_sessions,
-        source_messages=source_messages,
-        recorded_source_sessions=recorded_source_sessions,
-        recorded_source_messages=recorded_source_messages,
-        source_counts_match=source_counts_match,
-        covered_sessions=covered_sessions,
-        missing_sessions=missing_sessions,
-        coverage_ratio=coverage_ratio,
-        orphan_session_individuals=orphan_session_individuals,
-        orphan_structural_rows=orphan_structural_rows,
-        foreign_key_violations=foreign_key_violations,
-        domain_range_violations=domain_range_violations,
-        missing_tables=missing_tables,
-        missing_indexes=missing_indexes,
-        schema_errors=tuple(schema_errors),
-        malformed_timestamps=malformed,
+        extraction_version=state.extraction_version,
+        extraction_version_matches=version.matches,
+        recorded_logical_hash=state.recorded_hash,
+        recomputed_logical_hash=hash_check.recomputed_hash,
+        hash_matches=hash_check.matches,
+        completed_at=state.completed_at,
+        completed_at_valid=freshness.completed_at_valid,
+        newest_session_updated_at=freshness.newest_session_updated_at,
+        fresh=freshness.fresh,
+        source_sessions=source.sessions,
+        source_messages=source.messages,
+        recorded_source_sessions=state.recorded_source_sessions,
+        recorded_source_messages=state.recorded_source_messages,
+        source_counts_match=freshness.source_counts_match,
+        covered_sessions=coverage.covered_sessions,
+        missing_sessions=coverage.missing_sessions,
+        coverage_ratio=coverage.coverage_ratio,
+        orphan_session_individuals=coverage.orphan_session_individuals,
+        orphan_structural_rows=integrity.orphan_structural_rows,
+        foreign_key_violations=integrity.foreign_key_violations,
+        domain_range_violations=integrity.domain_range_violations,
+        missing_tables=schema.missing_tables,
+        missing_indexes=schema.missing_indexes,
+        schema_errors=schema.schema_errors,
+        malformed_timestamps=freshness.malformed_timestamps,
         diagnostics=tuple(diagnostics),
     )

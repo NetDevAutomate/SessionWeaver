@@ -1,99 +1,130 @@
 ---
 name: session-weaver
-description: "Recall and record cross-session knowledge: search past coding sessions from six harnesses (Claude Code, Codex, Kiro, OpenCode, pi, Grok), retrieve decisions/findings with provenance from the OKF knowledge store, and write wind-down knowledge at session end. Use when the user asks 'what did we decide about…', 'have I worked on… before', 'what did I struggle with…', when starting work on a project that likely has history, or when ending a substantial session (wind-down). Triggers: session memory, past sessions, previous work, what did we decide, session history, wind-down, knowledge store."
+description: "Recall and record cross-session knowledge: retrieve concepts and source sessions with provenance, inspect session history, and write evidence-backed wind-down concepts. Use for past decisions, prior work, recurring struggles, session history, or substantial-session wind-downs."
 ---
 
 # Session Weaver — cross-session memory for coding agents
 
-One SQLite store (`~/.config/studyloop/sessions.db`) holds every session from every
-supported harness on every synced machine, plus a typed ontology and an OKF knowledge
-store of distilled Decisions/Findings. This skill tells you how to READ it well and
-WRITE to it at wind-down. Benchmarked guidance, not vibes: fusion of the OKF store with
-raw-text search scored 0.68 recall@5 vs 0.48 for raw text alone — **always query the
-knowledge store first, raw text second.**
+Session Weaver reads captured sessions and evidence-backed concepts from one SQLite store,
+`~/.config/studyloop/sessions.db`. Concepts are model-proposed interpretations; exact citation
+binding is checked separately. Tier-1 ontology data is derived diagnostics and is not a recall
+input.
 
-## Reading — answer "what do we know?" questions
+## Read path
 
-### 1. First stop: the session-db MCP server (if connected)
-- `session_search(query=…)` — full-text over messages; supports AND/OR/NOT.
-- `session_context(session_id=…, format="compressed")` — token-efficient excerpt once
-  you've found the right session; never pull full sessions unless asked.
-- `session_hotspots(days=…)` — which files/projects recent sessions touched.
+### 1. Recall concepts, then source sessions
 
-### 2. Knowledge store (OKF): distilled, provenance-carrying facts
-Concept files: `~/.local/share/sessionweaver/poc-storage-decision/okf-store/`
-(plain Markdown + YAML frontmatter — grep/read directly, no tooling needed):
+Run the maintained concept-first CLI first:
+
 ```bash
-grep -rl --include='*.md' -i "<topic>" <okf-store>/ | head
+session-weaver recall "<question>" --k 5 --json
 ```
-Each hit gives `type` (Decision/Finding/Problem/Preference/Procedure), a
-self-contained description with verbatim names/numbers, and a `sources:` line
-naming the origin session — follow it with `session_context` for the full story.
-**Trust rules:** frontmatter `verified: machine-confirmed` means model-distilled, not
-human-reviewed; `confidence` < 0.7 deserves a raw-text cross-check before you rely on it.
 
-### 3. Ontology: typed/relational questions
-For "which sessions touched file X", "what ran in project Y", "which subagents did
-session Z spawn" — query the ontology tables directly (read-only!):
+When a harness exposes the same operation as `memory_recall`, use that surface instead. Recall
+uses keyword AND→OR planning, returns concepts before deduplicated session hits, applies scope and
+tombstone policy, ships no embeddings, and never queries the ontology.
+
+Trust the two labels independently:
+
+- `model_authorship: model-proposed` means a model authored the interpretation; it is not human
+  approval.
+- `citation_binding: machine-confirmed` means the exact quoted text was bound to visible evidence.
+- `legacy-unbound` means imported historical material has only session-level provenance. Bind it
+  through the CLI before acceptance; do not infer an exact citation.
+
+### 2. Expand with the session-db MCP server when registered
+
+After recall identifies a session or when raw transcript detail is needed:
+
+- `session_search(query=...)` finds matching captured messages.
+- `session_context(session_id=..., format="compressed")` retrieves a bounded excerpt.
+- `session_hotspots(days=...)` reports recently touched files and projects.
+
+These tools exist only when the harness has the session-db MCP server registered.
+Claude Code has no session-db MCP server registered until StudyLoop's installer adds it; this
+standalone Session Weaver installer installs the skill but does not register MCP servers. Use the
+`session-query` / `session-context` CLIs when MCP is unavailable and scope is configured.
+
+### 3. Inspect ontology health, never use it as recall evidence
+
 ```bash
-sqlite3 -readonly ~/.config/studyloop/sessions.db \
-  "SELECT r.subject FROM ontology_relation r JOIN ontology_individual o ON o.id=r.object
-   WHERE r.predicate='touched' AND o.label LIKE '%<file>%' LIMIT 10;"
+session-weaver ontology status
 ```
-Classes: Project, Harness, Session, SubagentSession, Artifact, Command, TestRun.
-Properties: ranIn, conductedBy, childOf, touched, executed, produced.
 
-### Query strategy (measured)
-1. Specific terms beat sentences: extract 2-4 distinctive terms (paths, error strings,
-   tool names) — AND them first, fall back to OR.
-2. Check the OKF store AND raw search; they win on different question shapes
-   (concepts: keyword/relational; raw text: verbatim details).
-3. Always report provenance (session id + date) with any recalled fact, and say
-   which layer it came from.
+This is a strictly read-only diagnostic. Ontology rows are derived locally and excluded from
+normal/global delta sync. The pinned first-time whole-file seed can still carry existing ontology
+rows until Phase B B2 sanitizes seed snapshots, so do not claim they can never travel by any sync
+path.
 
-## Writing — the wind-down step (this is how the store stays good)
+## Write path — code-enforced wind-down
 
-At the END of any substantial session (real decisions made, problems solved, findings
-established), distil what THIS session knows while you still have full context:
+At the end of a substantial session, create `winddown.json` and submit it through the maintained
+writer:
 
-1. Emit 0-8 concepts, types Decision | Finding | Problem | Preference | Procedure.
-2. Rules that made the measured difference: only what the transcript supports; keep
-   exact names/numbers/paths/commands VERBATIM; titles ≤12 words and specific (never
-   "Critical finding"); descriptions 1-3 self-contained sentences.
-3. Write each as an OKF file in the store, kebab-case filename, frontmatter:
-```yaml
----
-type: Decision
-title: "…"
-description: "…"
-tags: [lowercase, topic, tags]
-sources:
-  - resource: sessionweaver://session/<this-session-id>
-    role: transcript
-verified:
-  status: machine-confirmed
-  by: <your-agent-name>/<version>
-confidence: 0.9
-actor: <your-agent-name>/<version>
----
-<description body>
+```bash
+session-weaver winddown --session ID --from winddown.json
 ```
-4. If you cannot know your session id, still write the concept and set
-   `resource: sessionweaver://session/unknown` with a `date:` field — provenance
-   degraded beats knowledge lost.
 
-## Safety rails (absolute)
-- The live `sessions.db` is READ-ONLY to you outside the ontology/OKF write paths:
-  use `sqlite3 -readonly`; never UPDATE/DELETE sessions or messages; exports happen
-  via `session-export`, not by you.
-- Never copy the live DB with `cp` (WAL mode) — `.backup` only.
-- Do not edit files under the harness native stores (`~/.claude/projects`, etc.).
+The JSON contract is exact: the top level contains only `concepts`; it holds 0–8 concepts. Every
+concept contains exactly `type`, `title`, `description`, `tags`, `confidence`, and `quotes`.
+`type` is one of `Decision`, `Finding`, `Problem`, `Preference`, or `Procedure`; titles contain at
+most 12 words; tags contain 2–5 lowercase canonical values; confidence is 0.5–1.0; and every
+concept has 1–8 verbatim quotes. A quote contains `quote` and may include the complete locator
+triple `evidence_id`, `start`, and `end`.
 
-## What to expect
-- Recall quality: ~2 in 3 "what do we know" questions surface the right session in the
-  top 5 (0.68 measured); paraphrase-style questions are the known weak spot (0.25) —
-  if a reworded query misses, retry with the domain's literal vocabulary.
-- The store spans machines: content synced from other Macs appears here; deleted noise
-  cannot be resurrected by sync (verified).
-- Freshness: hooks + a 4-hour sweep capture sessions automatically; a session ended
-  minutes ago may not be exported yet.
+```json
+{
+  "concepts": [
+    {
+      "type": "Decision",
+      "title": "Use bounded online backups",
+      "description": "SQLite live-store validation uses Online Backup rather than copying the main file.",
+      "tags": ["session-memory", "sqlite"],
+      "confidence": 0.9,
+      "quotes": [
+        {"quote": "Never copy the live DB with cp; use SQLite Online Backup."}
+      ]
+    }
+  ]
+}
+```
+
+The writer validates the whole batch, resolves every quote against scope-visible evidence, assigns
+identities, writes authoritative DB state transactionally, and returns content-free structured
+JSON. Authoritative rule: never hand-write OKF files; Markdown is a disposable projection, not
+authoritative state. Use `session-weaver concept project --out DIR` to regenerate a projection.
+
+## Measured posture — A6
+
+On the post-fix/eligible `fb606468` exporter corpus at k=5, the all-25 and 25/25
+visibility-eligible results were identical:
+
+| Category | Recall@5 | Wilson 95% CI | MRR@5 | Wilson 95% CI |
+| --- | ---: | --- | ---: | --- |
+| Overall | 0.600000 | [0.407391, 0.765969] | 0.463333 | [0.286163, 0.650272] |
+| K | 0.818182 | [0.523014, 0.948633] | 0.621212 | [0.341058, 0.838617] |
+| P | 0.250000 | [0.071478, 0.590730] | 0.156250 | [0.032809, 0.502727] |
+| R | 0.666667 | [0.299988, 0.903231] | 0.583333 | [0.241074, 0.860536] |
+
+The verdict is **INVESTIGATE**: every category floor passed, but overall recall remained below the
+0.64 target. Current 25/25 visibility is **not directly comparable** to the frozen PoC's 22 IDs.
+The same-visibility raw-text positive control was **PASS** at 0.480000 recall / 0.312000 MRR. A
+separate corpus-verified directional P set scored **0/40** (0.000000 recall / 0.000000 MRR); it is
+a **non-gating** warning. Tier-1 ontology rebuild was parity preparation only and was never a
+recall input.
+
+Historical context only: the earlier PoC reported concept-only 0.64/0.50 and unshipped fusion
+0.68/0.50. Those values are not the current measured gate and do not describe shipped fusion or
+embedding behavior.
+
+## Freshness and safety rails
+
+- `session-export` is run by the user's own hooks or sweep configuration. This installer does not
+  provision that automation, so verify local freshness rather than assuming a schedule.
+- Treat the live `sessions.db` as read-only outside maintained commands. Exports use
+  `session-export`; concept writes use `winddown` / `concept`; ontology writes use explicit
+  `ontology rebuild`.
+- Never copy a WAL-mode live database with `cp`; use SQLite Online Backup.
+- Never edit harness-native transcript stores such as `~/.claude/projects`.
+- Cross-machine sync can move retained data. Do not promise propagated forgetting across original
+  transcripts, peers, backups, or exported notes.
