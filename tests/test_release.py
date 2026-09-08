@@ -94,6 +94,34 @@ def test_installed_smoke_contract_checks_vcs_metadata_and_every_reexport(
         smoke.extract_file_url({"url": "https://example.invalid/session-weaver.whl"})
 
 
+def test_installed_smoke_missing_artifact_reports_sanitized_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    smoke = importlib.import_module("session_weaver.installed_smoke")
+    missing_artifact = tmp_path / "missing.whl"
+
+    result = smoke.main(
+        [
+            "--artifact",
+            str(missing_artifact),
+            "--kind",
+            "wheel",
+            "--session-weaver-sha",
+            "test-sha",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.out == ""
+    assert captured.err.startswith("installed artifact verification failed:")
+    assert len(captured.err.splitlines()) == 1
+    assert "Traceback" not in captured.err
+    assert "installed_smoke.py" not in captured.err
+    assert str(ROOT) not in captured.err
+
+
 def _release_root(tmp_path: Path) -> Path:
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "session-weaver"\nversion = "0.2.0"\n', encoding="utf-8"
