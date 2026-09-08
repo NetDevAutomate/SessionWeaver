@@ -209,7 +209,7 @@ uv run ruff format --check .
 uv run pyright
 ```
 
-The current suite contains **522 tests**: 517 selected by the default non-live run and 5 opt-in
+The current suite contains **541 tests**: 536 selected by the default non-live run and 5 opt-in
 live tests. Package coverage is required to remain at least 90%. The ontology live test requires
 an explicit source and writes retained evidence only when an explicit target is supplied:
 
