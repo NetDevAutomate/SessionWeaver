@@ -32,12 +32,68 @@ Verify the resulting rule with:
 gh api repos/NetDevAutomate/SessionWeaver/branches/main/protection
 ```
 
+## Protect `v*` tags before release
+
+A `v*` tag enables the trusted merge-commit mode in CI, so the tag namespace must be locked
+down **before any release tag exists**. Apply a repository ruleset that restricts creation,
+update, and deletion of `v*` tags to the repository owner (or a release role), and verify it:
+
+```bash
+gh api --method POST \
+  repos/NetDevAutomate/SessionWeaver/rulesets \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --input - <<'JSON'
+{
+  "name": "protect-release-tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
+  "rules": [
+    {"type": "creation"},
+    {"type": "update"},
+    {"type": "deletion"},
+    {"type": "non_fast_forward"}
+  ],
+  "bypass_actors": [
+    {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+  ]
+}
+JSON
+
+gh api repos/NetDevAutomate/SessionWeaver/rulesets
+```
+
+Do not create a release tag until this ruleset is active and verified.
+
+### Server-merge trust boundary
+
+The pre-commit author hook enforces exact `NetDevAutomate <andy.taylor@mail.com>` author and
+committer identity on the checked commit. GitHub-generated PR merge commits cannot satisfy that
+check: GitHub records the merging account as author and `GitHub <noreply@github.com>` as
+committer. CI therefore enables a narrow merge mode (`ALLOW_GITHUB_MERGE_COMMIT=true`) only for
+`refs/heads/main` and `refs/tags/v*` runs. In that mode the hook accepts a commit only when all
+of the following hold, and fails closed otherwise:
+
+- the commit has exactly two parents (direct one-parent pushes and octopus merges fail);
+- the merge committer is exactly `GitHub <noreply@github.com>`;
+- the second parent (the reviewed PR head) has exact `NetDevAutomate <andy.taylor@mail.com>`
+  author **and** committer identity;
+- the commit is reachable from fetched `origin/main` first-parent history, so a `v*` tag pushed
+  at a GitHub-shaped merge that never landed on `main` still fails.
+
+The merge author is deliberately **not** checked — GitHub records the merging account there, and
+identity strings are spoofable metadata. The trust root is `main` branch protection plus the
+`v*` tag ruleset above, not the committer string: those server-side controls are what guarantee
+that a commit with this shape reached `main` through GitHub's reviewed merge path.
+
 ## Release sequence
 
 1. Complete the mandatory independent whole-branch review. Close and re-review every Critical or
    Important finding.
 2. Merge to `main`; do not tag yet.
-3. Apply and verify the `main` protection rule from the preceding section.
+3. Apply and verify the `main` protection rule and the `v*` tag ruleset from the preceding
+   sections.
 4. Record the exact merge SHA, then wait for the `gates`, `package`, `pre-commit`, and
    `fixture-e2e` jobs to finish successfully at that SHA. Retain the CI run ID and the wheel/sdist
    artifact receipts.

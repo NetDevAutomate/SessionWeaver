@@ -94,6 +94,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -102,6 +103,7 @@ jobs:
       - name: Run pinned pre-commit suite
         env:
           CHECK_COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ALLOW_GITHUB_MERGE_COMMIT: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
         run: uvx --from pre-commit==4.3.0 pre-commit run --all-files
 
   fixture-e2e:

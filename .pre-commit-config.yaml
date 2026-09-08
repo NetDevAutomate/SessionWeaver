@@ -63,6 +63,34 @@ repos:
           if ! commit="$(git rev-parse --verify --quiet "${CHECK_COMMIT_SHA}^{commit}")"; then
           echo "ERROR: CHECK_COMMIT_SHA must identify a commit";
           exit 1; fi;
+          if [ "${ALLOW_GITHUB_MERGE_COMMIT:-}" = "true" ]; then
+          parent_count=$(($(git show -s --format=%P "$commit" | wc -w)));
+          if [ "$parent_count" -ne 2 ]; then
+          echo "ERROR: merge mode requires a two-parent merge commit; found $parent_count parent(s)";
+          exit 1; fi;
+          merge_committer="$(git show -s --format="%cn <%ce>" "$commit")";
+          if [ "$merge_committer" != "GitHub <noreply@github.com>" ]; then
+          echo "ERROR: merge committer must be GitHub <noreply@github.com>";
+          echo "  committer: $merge_committer";
+          exit 1; fi;
+          if ! second="$(git rev-parse --verify --quiet "${commit}^2")"; then
+          echo "ERROR: cannot resolve the merge second parent";
+          exit 1; fi;
+          second_author="$(git show -s --format="%an <%ae>" "$second")";
+          second_committer="$(git show -s --format="%cn <%ce>" "$second")";
+          if [ "$second_author" != "NetDevAutomate <andy.taylor@mail.com>" ] ||
+          [ "$second_committer" != "NetDevAutomate <andy.taylor@mail.com>" ]; then
+          echo "ERROR: merged PR head must be authored by NetDevAutomate <andy.taylor@mail.com>";
+          echo "  author:    $second_author";
+          echo "  committer: $second_committer";
+          exit 1; fi;
+          if ! git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}" >/dev/null; then
+          echo "ERROR: merge mode requires fetched origin/main for ancestry proof";
+          exit 1; fi;
+          if ! git rev-list --first-parent refs/remotes/origin/main | grep -qx "$commit"; then
+          echo "ERROR: merge commit is not on origin/main first-parent history";
+          exit 1; fi;
+          exit 0; fi;
           author="$(git show -s --format=%an "$commit")";
           email="$(git show -s --format=%ae "$commit")";
           cname="$(git show -s --format=%cn "$commit")";
