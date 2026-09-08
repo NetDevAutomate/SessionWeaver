@@ -59,17 +59,28 @@ repos:
         name: Check commit author is NetDevAutomate
         entry: >-
           bash -c '
+          if [ "${CHECK_COMMIT_SHA+x}" = x ]; then
+          if ! commit="$(git rev-parse --verify --quiet "${CHECK_COMMIT_SHA}^{commit}")"; then
+          echo "ERROR: CHECK_COMMIT_SHA must identify a commit";
+          exit 1; fi;
+          author="$(git show -s --format=%an "$commit")";
+          email="$(git show -s --format=%ae "$commit")";
+          cname="$(git show -s --format=%cn "$commit")";
+          cemail="$(git show -s --format=%ce "$commit")";
+          fix="Fix the checked-out commit metadata before running CI";
+          else
           author="${GIT_AUTHOR_NAME:-$(git config user.name)}";
           email="${GIT_AUTHOR_EMAIL:-$(git config user.email)}";
           cname="${GIT_COMMITTER_NAME:-$(git config user.name)}";
           cemail="${GIT_COMMITTER_EMAIL:-$(git config user.email)}";
+          fix="Fix: git config user.name NetDevAutomate && git config user.email andy.taylor@mail.com";
+          fi;
           if [ "$author" != "NetDevAutomate" ] || [ "$email" != "andy.taylor@mail.com" ] ||
           [ "$cname" != "NetDevAutomate" ] || [ "$cemail" != "andy.taylor@mail.com" ]; then
           echo "ERROR: Commits must be authored by NetDevAutomate <andy.taylor@mail.com>";
           echo "  author:    $author <$email>";
           echo "  committer: $cname <$cemail>";
-          echo "Fix: git config user.name NetDevAutomate && git config user.email andy.taylor@mail.com";
-          echo "(and do not pass --author or set GIT_AUTHOR_NAME/GIT_COMMITTER_NAME)";
+          echo "$fix";
           exit 1; fi'
         language: system
         always_run: true

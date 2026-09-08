@@ -92,12 +92,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Sync from the frozen lock
         run: uv sync --frozen --python 3.12
       - name: Run pinned pre-commit suite
+        env:
+          CHECK_COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: uvx --from pre-commit==4.3.0 pre-commit run --all-files
 
   fixture-e2e:
